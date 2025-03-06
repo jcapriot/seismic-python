@@ -2,7 +2,7 @@
 # cython: linetrace=True
 
 from cpython.object cimport PyObject_AsFileDescriptor
-from libc.stdio cimport FILE, fclose, SEEK_SET
+from libc.stdio cimport FILE, fclose, SEEK_SET, fwrite, fread
 from libc.limits cimport INT_MIN, INT_MAX
 import os
 import io
@@ -105,3 +105,67 @@ cdef int PyFile_DupClose(object file, FILE* handle, spy_off_t orig_pos):
     # Seek Python-side handle to the FILE* handle position
     file.seek(position)
     return 0
+
+cdef size_t write_struct_to_file(
+    char *st, size_t *offsets, size_t *sizes, size_t n_attrs, FILE *fd
+) noexcept nogil:
+    """
+    If a struct has padding between its members, you should use this to
+    write to a file, as it explicitly does not include any platform/compiler
+    specific padding between members.
+    
+    Otherwise, you can just use fwrite(&st, sizeof(st), 1, fd)
+    """
+    cdef size_t i, n_bytes_written
+    for i in range(n_attrs):
+        n_bytes_written += fwrite(st, 1, sizes[i], fd)
+        st += offsets[i]
+    return n_bytes_written
+
+cdef size_t read_struct_from_file(
+    char *st, size_t *offsets, size_t *sizes, size_t n_attrs, FILE *fd
+) noexcept nogil:
+    """
+    If a struct has padding, you should use this to write to a file,
+    as it explicitly does not include any platform/compiler specific
+    padding between members.
+    
+    Otherwise, you can just use fread(&st, sizeof(st), 1, fd)
+    """
+    cdef size_t i, n_bytes_read
+    for i in range(n_attrs):
+        n_bytes_read += fread(st, 1, sizes[i], fd)
+        st += offsets[i]
+    return n_bytes_read
+
+cdef void copy_struct_to_char(
+    char *st, size_t *offsets, size_t *sizes, size_t n_attrs, char *out
+) noexcept nogil:
+    """
+    If a struct has padding, and you don't want to include that padding
+    in the byte array, you should use this to copy it in, as it explicitly
+    does not include any platform/compiler specific padding between members.
+
+    Otherwise, you can just memcpy the two...
+    """
+    cdef size_t i, j
+    for i in range(n_attrs):
+        for j in range(offsets[i], offsets[i] + sizes[i]):
+            out[0] = st[j]
+            out += 1
+
+cdef void copy_struct_from_char(
+    char *st, size_t *offsets, size_t *sizes, size_t n_attrs, char *out
+) noexcept nogil:
+    """
+    If a struct has padding, and that padding isn't included in the byte
+    array, you should use this to copy it in, as it explicitly does not
+    include any platform/compiler specific padding between members.
+
+    Otherwise, you can just memcpy the two...
+    """
+    cdef size_t i, j
+    for i in range(n_attrs):
+        for j in range(offsets[i], offsets[i] + sizes[i]):
+            st[j] = out[0]
+            out += 1

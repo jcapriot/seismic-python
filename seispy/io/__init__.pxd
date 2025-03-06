@@ -88,3 +88,16 @@ cdef extern from * nogil:
 
 cdef (FILE *, spy_off_t) PyFile_Dup(object file, char* mode)
 cdef int PyFile_DupClose(object file, FILE* handle, spy_off_t orig_pos)
+
+cdef size_t write_struct_to_file(
+    char *st, size_t *offsets, size_t *sizes, size_t n_attrs, FILE *fd
+) noexcept nogil
+cdef size_t read_struct_from_file(
+    char *st, size_t *offsets, size_t *sizes, size_t n_attrs, FILE *fd
+) noexcept nogil
+cdef void copy_struct_to_char(
+    char *st, size_t *offsets, size_t *sizes, size_t n_attrs, char *out
+) noexcept nogil
+cdef void copy_struct_from_char(
+    char *st, size_t *offsets, size_t *sizes, size_t n_attrs, char *out
+) noexcept nogil
