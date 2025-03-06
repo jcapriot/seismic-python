@@ -4,6 +4,7 @@
 from libc.math cimport floor, ceil, log10, fabs
 from libc.string cimport memset
 from libc.limits cimport INT_MIN, INT_MAX, SHRT_MAX
+from libc.stdlib cimport malloc
 from .. cimport container as spyc
 
 
@@ -152,23 +153,55 @@ cdef:
     i2 TRC_ID_YAW = 40
     i2 TRC_ID_ROLL = 41
 
+def __dtype_to_sizes_and_offsets(dtype):
+    cdef:
+        size_t n_attrs = len(dtype)
+        size_t[::1] offsets = <size_t[:n_attrs]> malloc(sizeof(size_t)*n_attrs)
+        size_t[::1] sizes = <size_t[:n_attrs]> malloc(sizeof(size_t)*n_attrs)
+
+    for i, name in enumerate(dtype.names):
+        sizes[i] = dtype.fields[name][0].itemsize
+        offsets[i] = dtype.fields[name][1]
+
+    return sizes, offsets
+
+
 # define a numpy dtypes consistent with the header structs
-cdef binary_header tmp_bin_hdr
+cdef:
+    binary_header tmp_bin_hdr
+    size_t[::1] _bh_sizes
+    size_t[::1] _bh_offsets
 binary_header_dtype = np.asarray(<binary_header[:1]> &tmp_bin_hdr).dtype
+_bh_sizes, _bh_offsets  = __dtype_to_sizes_and_offsets(binary_header_dtype)
 
-cdef trace_header tmp_trc_hdr
+cdef:
+    trace_header tmp_trc_hdr
+    size_t[::1] _th_sizes
+    size_t[::1] _th_offsets
 trace_header_dtype = np.asarray(<trace_header[:1]> &tmp_trc_hdr).dtype
+_th_sizes, _th_offsets  = __dtype_to_sizes_and_offsets(trace_header_dtype)
 
-cdef extended_trace_header tmp_ext_hdr
-extended_trace_header_header_dtype = np.asarray(<extended_trace_header[:1]> &tmp_ext_hdr).dtype
+cdef:
+    extended_trace_header tmp_ext_hdr
+    size_t[::1] _eh_sizes
+    size_t[::1] _eh_offsets
+extended_trace_header_dtype = np.asarray(<extended_trace_header[:1]> &tmp_ext_hdr).dtype
+_eh_sizes, _eh_offsets  = __dtype_to_sizes_and_offsets(extended_trace_header_dtype)
 
 
-cdef su_trace tmp_su_hdr
+cdef:
+    su_trace tmp_su_hdr
+    size_t[::1] _su_sizes
+    size_t[::1] _su_offsets
 su_trace_header_dtype = np.asarray(<su_trace[:1]> &tmp_su_hdr).dtype
+_su_sizes, _su_offsets  = __dtype_to_sizes_and_offsets(su_trace_header_dtype)
 
-
-cdef unocal_trace tmp_unocal_hdr
+cdef:
+    unocal_trace tmp_unocal_hdr
+    size_t[::1] _unc_sizes
+    size_t[::1] _unc_offsets
 unocal_trace_header_dtype = np.asarray(<unocal_trace[:1]> &tmp_unocal_hdr).dtype
+_unc_sizes, _unc_offsets  = __dtype_to_sizes_and_offsets(unocal_trace_header_dtype)
 
 def trace_label_size():
     return TAP_LBL_SIZE
@@ -181,6 +214,20 @@ def binary_header_size():
 
 def trace_header_size():
     return TRC_HDR_SIZE
+
+def get_sizes_and_offsets(name):
+    if name == 'binary_header':
+        print(name)
+        return _bh_sizes, _bh_offsets
+    elif name == 'trace_header':
+        print(name)
+        return _th_sizes, _th_offsets
+    elif name =='extended_trace_header':
+        print(name)
+        return _eh_sizes, _eh_offsets
+    else:
+        print('su')
+        return _su_sizes, _su_offsets
 
 cdef class SEGYTrace:
     cdef:

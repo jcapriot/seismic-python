@@ -159,7 +159,7 @@ cdef:
     i2 TRC_GAIN_TYPE
 
 
-cdef packed struct binary_header:
+cdef struct binary_header:
     i4 job_id
     i4 line_number
     i4 reel_number
@@ -196,7 +196,7 @@ cdef packed struct binary_header:
     ui4 next_sample_per_trace_field
     ui4 next_fold
     i4 byte_order_id
-    ui1[200] unassigned_1
+    char[200] unassigned_1
     # rev 1
     ui1 major_rev
     ui1 minor_rev
@@ -209,10 +209,10 @@ cdef packed struct binary_header:
     ui8 n_traces
     ui8 first_trace_byte_offset
     ui4 n_trailer_stanzas
-    ui1[68] unassigned_2
+    char[68] unassigned_2
 
 
-cdef packed struct trace_header:
+cdef struct trace_header:
     # rev 0
     ui4 linetrc # 1
     ui4 reeltrc # 5
@@ -307,7 +307,7 @@ cdef packed struct trace_header:
     i2 src_units # 231
     char[8] end
 
-cdef packed struct extended_trace_header:
+cdef struct extended_trace_header:
     ui8 linetrc
     ui8 reeltrc
     i8 ffid
@@ -333,10 +333,10 @@ cdef packed struct extended_trace_header:
     i2 last_trc
     r8 cdp_x
     r8 cdp_y
-    ui1[56] reserved
+    char[56] reserved
     char[8] header_name
 
-cdef packed struct su_trace:
+cdef struct su_trace:
     int tracl
     int tracr
     int fldr
@@ -420,7 +420,7 @@ cdef packed struct su_trace:
     short shortpad
     short unass[14]
 
-cdef packed struct unocal_trace:
+cdef struct unocal_trace:
     int tracl
     int tracr
     int fldr
