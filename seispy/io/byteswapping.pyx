@@ -28,7 +28,7 @@ cpdef swappable swap_endian_and_system(swappable x, endian='>'):
         raise ValueError("endian must be one of '>' (big), '<' (little), or '<>' (pairwise byteswapped)")
 
     with nogil:
-        memcpy(&_x, &x, sizeof(swappable))
+        _x = x
         if swappable is uint16_t or swappable is int16_t:
             if target == 0:
                 swap16_big_and_system(<uint16_t*> &_x, 1)
