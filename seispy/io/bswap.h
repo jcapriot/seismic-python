@@ -20,7 +20,7 @@
 
 #else
 
-#ifdef DHAVE___BUILTIN_BSWAP16:
+#ifdef DHAVE___BUILTIN_BSWAP16
 #define spy_bswap_u16(x) __builtin_bswap16(x)
 #else
 static inline uint16_t
@@ -30,7 +30,7 @@ spy_bswap_u16(uint16_t x)
 }
 #endif
 
-#ifdef DHAVE___BUILTIN_BSWAP32:
+#ifdef DHAVE___BUILTIN_BSWAP32
 #define spy_bswap_u32(x) __builtin_bswap32(x)
 #else
 static inline uint32_t
@@ -41,7 +41,7 @@ spy_bswap_u32(uint32_t x)
 }
 #endif
 
-#ifdef DHAVE___BUILTIN_BSWAP64:
+#ifdef DHAVE___BUILTIN_BSWAP64
 #define spy_bswap_u64(x) __builtin_bswap64(x)
 #else
 static inline uint64_t
@@ -151,13 +151,13 @@ static inline void swap64_pairwise_and_system(uint64_t *x, size_t n){
 }
 
 // struct swapping
-static inline void swap_struct_big_and_system(char *str, size_t *sizes, size_t n_attr){
+static inline void swap_struct_big_and_system(char *str, size_t *offsets, size_t *sizes, size_t n_attr){
     #ifdef IS_LITTLE_ENDIAN
     size_t i;
     uint16_t *t16;
     uint32_t *t32;
     uint64_t *t64;
-    for(i=0; i < n_attr; ++i, str += *sizes++){ // *sizes++ gets the value pointed to by size, then increments the sizes pointer
+    for(i=0; i < n_attr; ++i, str += *(++offsets), ++sizes){ // *sizes++ gets the value pointed to by size, then increments the sizes pointer
         if(*sizes == 2){
             t16 = (uint16_t *) str;
             *t16 = spy_bswap_u16(*t16);
@@ -171,13 +171,13 @@ static inline void swap_struct_big_and_system(char *str, size_t *sizes, size_t n
     }
     #endif
 }
-static inline void swap_struct_little_and_system(char *str, size_t *sizes, size_t n_attr){
+static inline void swap_struct_little_and_system(char *str, size_t *offsets, size_t *sizes, size_t n_attr){
     #ifdef IS_BIG_ENDIAN
     size_t i;
     uint16_t *t16;
     uint32_t *t32;
     uint64_t *t64;
-    for(i=0; i < n_attr; ++i, str += *sizes++){ // *sizes++ gets the value pointed to by size, then increments the sizes pointer
+    for(i=0; i < n_attr; ++i, str += *(++offsets), ++sizes){ // *sizes++ gets the value pointed to by size, then increments the sizes pointer
         if(*sizes == 2){
             t16 = (uint16_t *) str;
             *t16 = spy_bswap_u16(*t16);
@@ -191,13 +191,13 @@ static inline void swap_struct_little_and_system(char *str, size_t *sizes, size_
     }
     #endif
 }
-static inline void swap_struct_pairwise_and_system(char *str, size_t *sizes, size_t n_attr){
+static inline void swap_struct_pairwise_and_system(char *str, size_t *offsets, size_t *sizes, size_t n_attr){
     #ifdef IS_BIG_ENDIAN
     size_t i, j;
     uint16_t *t16;
     uint32_t *t32;
     uint64_t *t64;
-    for(i=0; i < n_attr; ++i, str += *sizes++){ // *sizes++ gets the value pointed to by size, then increments the sizes pointer
+    for(i=0; i < n_attr; ++i, str += *(++offsets), ++sizes{ // *sizes++ gets the value pointed to by size, then increments the sizes pointer
         if(*sizes == 2){
             #ifdef IS_BIG_ENDIAN
             t16 = (uint16_t *) str;
