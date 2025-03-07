@@ -5,7 +5,7 @@ from libc.math cimport floor, ceil, log10, fabs
 from libc.string cimport memset
 from libc.limits cimport INT_MIN, INT_MAX, SHRT_MAX
 from .. cimport container as spyc
-from . cimport struct_dtype_info
+from ._io cimport struct_dtype_info
 
 
 import numpy as np
