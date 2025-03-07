@@ -2,104 +2,87 @@
 #define _BSWAP_H
 
 #include <stddef.h> // size_t, _byteswap_ushort on windows
-#include <stdint.h> // uint16_t and the like
 #include <string.h> // memcpy
 
+#include "spy_config.h"
+
 #ifdef _MSC_VER
-#define spy_bswap_u16(x) _byteswap_ushort(x) //relying on ushort being 16 bits on mscv compiler
-#define spy_bswap_u32(x) _byteswap_ulong(x)  //relying on ulong being 32 bits on mscv compiler
+#define spy_bswap_u16(x) _byteswap_ushort(x) //relying on ushort being 16 bits on msvc compiler
+#define spy_bswap_u32(x) _byteswap_ulong(x)  //relying on ulong being 32 bits on msvc compiler
 #define spy_bswap_u64(x) _byteswap_uint64(x)
-
-#elif defined(__APPLE__)
-
-// Mac OS X / Darwin features
-#include <libkern/OSByteOrder.h>
-#define spy_bswap_u16(x) OSSwapInt16(x)
-#define spy_bswap_u32(x) OSSwapInt32(x)
-#define spy_bswap_u64(x) OSSwapInt64(x)
 
 #else
 
 #ifdef HAVE___BUILTIN_BSWAP16
 #define spy_bswap_u16(x) __builtin_bswap16(x)
 #else
-static inline uint16_t
-spy_bswap_u16(uint16_t x)
+static inline spy_uint16
+spy_bswap_u16(spy_uint16 x)
 {
-    return ((x & 0xffu) << 8) | (x >> 8);
+    return ((x & 0x00ffu) << 8) | ((x 0xff00u) >> 8);
 }
 #endif
 
 #ifdef HAVE___BUILTIN_BSWAP32
 #define spy_bswap_u32(x) __builtin_bswap32(x)
 #else
-static inline uint32_t
-spy_bswap_u32(uint32_t x)
+static inline spy_uint32
+spy_bswap_u32(spy_uint32 x)
 {
-    return ((x & 0xffu) << 24) | ((x & 0xff00u) << 8) |
-   ((x & 0xff0000u) >> 8) | (x >> 24);
+    return ((x & 0x000000ffu) << 24) |
+           ((x & 0x0000ff00u) <<  8) |
+           ((x & 0x00ff0000u) >>  8) |
+           ((x & 0xff000000u) >> 24);
 }
 #endif
 
 #ifdef HAVE___BUILTIN_BSWAP64
 #define spy_bswap_u64(x) __builtin_bswap64(x)
 #else
-static inline uint64_t
-spy_bswap_u64(uint64_t x)
+static inline spy_uint64
+spy_bswap_u64(spy_uint64 x)
 {
-    return ((x & 0xffULL) << 56) |
-           ((x & 0xff00ULL) << 40) |
-           ((x & 0xff0000ULL) << 24) |
-           ((x & 0xff000000ULL) << 8) |
-           ((x & 0xff00000000ULL) >> 8) |
-           ((x & 0xff0000000000ULL) >> 24) |
-           ((x & 0xff000000000000ULL) >> 40) |
-           ( x >> 56);
+    return ((x & 0x00000000000000ffULL) << 56) |
+           ((x & 0x000000000000ff00ULL) << 40) |
+           ((x & 0x0000000000ff0000ULL) << 24) |
+           ((x & 0x00000000ff000000ULL) <<  8) |
+           ((x & 0x000000ff00000000ULL) >>  8) |
+           ((x & 0x0000ff0000000000ULL) >> 24) |
+           ((x & 0x00ff000000000000ULL) >> 40) |
+           ((x & 0xff00000000000000ULL) >> 56);
 }
 #endif
 
 #endif
 
-#define spy_bswap_pair_big_u16 spy_bswap_u16
+#define spy_prw_big_bswap_u16 spy_bswap_u16
 
-static inline uint32_t
-spy_prw_big_bswap_u32(uint32_t x){
-    return ((x & 0xffULL) << 8) |
-           ((x & 0xff00ULL) >> 8) |
-           ((x & 0xff0000ULL) << 8) |
-           ((x & 0xff000000ULL) >> 8);
+static inline spy_uint32
+spy_prw_big_bswap_u32(spy_uint32 x){
+    return ((x & 0x00ff00ffu) << 8) |
+           ((x & 0xff00ff00u) >> 8);
 }
 
-static inline uint64_t
-spy_prw_big_bswap_u64(uint64_t x){
-    return ((x & 0xffULL) << 8) |
-           ((x & 0xff00ULL) >> 8) |
-           ((x & 0xff0000ULL) << 8) |
-           ((x & 0xff000000ULL) >> 8) |
-           ((x & 0xff00000000ULL) << 8) |
-           ((x & 0xff0000000000ULL) >> 8) |
-           ((x & 0xff000000000000ULL) << 8) |
-           ((x & 0xff00000000000000ULL) >> 8);
+static inline spy_uint64
+spy_prw_big_bswap_u64(spy_uint64 x){
+    return ((x & 0x00ff00ff00ff00ffULL) << 8) |
+           ((x & 0xff00ff00ff00ff00ULL) >> 8);
 }
 
-static inline uint32_t
-spy_prw_lil_bswap_u32(uint32_t x){
-    return ((x & 0xffULL) << 16) |
-           ((x & 0xff00ULL) << 16) |
-           ((x & 0xff0000ULL) >> 16) |
-           ((x & 0xff000000ULL) >> 16);
+#define spy_prw_lil_bswap_u16(x) (x)
+
+static inline spy_uint32
+spy_prw_lil_bswap_u32(spy_uint32 x){
+    return ((x & 0x0000ffffu) << 16) |
+           ((x & 0xffff0000u) >> 16);
 }
 
-static inline uint64_t
-spy_prw_lil_bswap_u64(uint64_t x){
-    return ((x & 0xffULL) << 48) |
-           ((x & 0xff00ULL) << 48) |
-           ((x & 0xff0000ULL) << 16) |
-           ((x & 0xff000000ULL) << 16) |
-           ((x & 0xff00000000ULL) >> 16) |
-           ((x & 0xff0000000000ULL) >> 16) |
-           ((x & 0xff000000000000ULL) >> 48) |
-           ((x & 0xff00000000000000ULL) >> 48);
+static inline spy_uint64
+spy_prw_lil_bswap_u64(spy_uint64 x){
+    return ((x & 0x000000000000ffffULL) << 48) |
+           ((x & 0x00000000ffff0000ULL) << 16) |
+           ((x & 0x0000ffff00000000ULL) >> 16) |
+           ((x & 0xffff000000000000ULL) >> 48);
 }
 
 // Unaligned versions:
@@ -182,7 +165,7 @@ spy_is_aligned(const void *restrict p, const uintptr_t alignment)
 }
 
 // array swapping endian
-static inline void swap16_big_and_system(uint16_t *x, size_t n){
+static inline void swap16_big_and_system(spy_uint16 *x, size_t n){
     #ifdef IS_LITTLE_ENDIAN
     size_t i;
     char *a;
@@ -198,7 +181,7 @@ static inline void swap16_big_and_system(uint16_t *x, size_t n){
     #endif
 }
 
-static inline void swap32_big_and_system(uint32_t *x, size_t n){
+static inline void swap32_big_and_system(spy_uint32 *x, size_t n){
     #ifdef IS_LITTLE_ENDIAN
     size_t i;
     char *a;
@@ -214,7 +197,7 @@ static inline void swap32_big_and_system(uint32_t *x, size_t n){
     #endif
 }
 
-static inline void swap64_big_and_system(uint64_t *x, size_t n){
+static inline void swap64_big_and_system(spy_uint64 *x, size_t n){
     #ifdef IS_LITTLE_ENDIAN
     size_t i;
     char *a;
@@ -230,7 +213,7 @@ static inline void swap64_big_and_system(uint64_t *x, size_t n){
     #endif
 }
 
-static inline void swap16_little_and_system(uint16_t *x, size_t n){
+static inline void swap16_little_and_system(spy_uint16 *x, size_t n){
     #ifdef IS_BIG_ENDIAN
     size_t i;
     char *a;
@@ -246,7 +229,7 @@ static inline void swap16_little_and_system(uint16_t *x, size_t n){
     #endif
 }
 
-static inline void swap32_little_and_system(uint32_t *x, size_t n){
+static inline void swap32_little_and_system(spy_uint32 *x, size_t n){
     #ifdef IS_BIG_ENDIAN
     size_t i;
     char *a;
@@ -262,7 +245,7 @@ static inline void swap32_little_and_system(uint32_t *x, size_t n){
     #endif
 }
 
-static inline void swap64_little_and_system(uint64_t *x, size_t n){
+static inline void swap64_little_and_system(spy_uint64 *x, size_t n){
     #ifdef IS_BIG_ENDIAN
     size_t i;
     char *a;
@@ -278,7 +261,7 @@ static inline void swap64_little_and_system(uint64_t *x, size_t n){
     #endif
 }
 
-static inline void swap16_pairwise_and_system(uint16_t *x, size_t n){
+static inline void swap16_pairwise_and_system(spy_uint16 *x, size_t n){
     #ifdef IS_BIG_ENDIAN
     size_t i;
     char *a;
@@ -294,7 +277,7 @@ static inline void swap16_pairwise_and_system(uint16_t *x, size_t n){
     #endif
 }
 
-static inline void swap32_pairwise_and_system(uint32_t *x, size_t n){
+static inline void swap32_pairwise_and_system(spy_uint32 *x, size_t n){
     size_t i;
     char *a;
     if(spy_is_aligned(x, 4)){
@@ -316,7 +299,7 @@ static inline void swap32_pairwise_and_system(uint32_t *x, size_t n){
     }
 }
 
-static inline void swap64_pairwise_and_system(uint64_t *x, size_t n){
+static inline void swap64_pairwise_and_system(spy_uint64 *x, size_t n){
     size_t i;
     char *a;
     if(spy_is_aligned(x, 8)){
@@ -338,114 +321,93 @@ static inline void swap64_pairwise_and_system(uint64_t *x, size_t n){
     }
 }
 
-// struct swapping
-static inline void swap_struct_big_and_system(char *str, size_t *offsets, size_t *sizes, size_t n_attr){
+// variable byte swapping (usually for structs)
+static inline void swapXX_big_and_system(
+    char *str, size_t *offsets, size_t *sizes, size_t *n_elements, size_t n_attr
+){
     #ifdef IS_LITTLE_ENDIAN
-    size_t i;
+    size_t i, j;
     char *attr;
-    for(i=0; i < n_attr; ++i, ++offsets, ++sizes){
+    for(i=0; i < n_attr; ++i, ++offsets, ++sizes, ++n_elements){
         attr = str + *offsets;
         if(*sizes == 2){
-            if(spy_is_aligned(attr, 2)){
-                uint16_t *t16 = (uint16_t *) attr;
+            spy_uint16 *t16 = (spy_uint16 *) attr;
+            for(j=0; j<*n_elements; ++j, ++t16){
                 *t16 = spy_bswap_u16(*t16);
-            }else{
-                spy_bswap2_unaligned(attr);
             }
         }else if(*sizes == 4){
-            if(spy_is_aligned(attr, 4)){
-                uint32_t *t32 = (uint32_t *) attr;
+            spy_uint32 *t32 = (spy_uint32 *) attr;
+            for(j=0; j<*n_elements; ++j, ++t32){
                 *t32 = spy_bswap_u32(*t32);
-            }else{
-                spy_bswap4_unaligned(attr);
             }
         }else if(*sizes == 8){
-            if(spy_is_aligned(attr, 8)){
-                uint64_t *t64 = (uint64_t *) (str + *offsets);
+            spy_uint64 *t64 = (spy_uint64 *) attr;
+            for(j=0; j<*n_elements; ++j, ++t64){
                 *t64 = spy_bswap_u64(*t64);
-            }else{
-                spy_bswap8_unaligned(attr);
-            }
-        }
-    }
-    #endif
-}
-static inline void swap_struct_little_and_system(char *str, size_t *offsets, size_t *sizes, size_t n_attr){
-    #ifdef IS_BIG_ENDIAN
-    size_t i;
-    char *attr;
-    for(i=0; i < n_attr; ++i, ++offsets, ++sizes){
-        attr = str + *offsets;
-        if(*sizes == 2){
-            if(spy_is_aligned(attr, 2)){
-                uint16_t *t16 = (uint16_t *) attr;
-                *t16 = spy_bswap_u16(*t16);
-            }else{
-                spy_bswap2_unaligned(attr);
-            }
-        }else if(*sizes == 4){
-            if(spy_is_aligned(attr, 4)){
-                uint32_t *t32 = (uint32_t *) attr;
-                *t32 = spy_bswap_u32(*t32);
-            }else{
-                spy_bswap4_unaligned(attr);
-            }
-        }else if(*sizes == 8){
-            if(spy_is_aligned(attr, 8)){
-                uint64_t *t64 = (uint64_t *) (str + *offsets);
-                *t64 = spy_bswap_u64(*t64);
-            }else{
-                spy_bswap8_unaligned(attr);
             }
         }
     }
     #endif
 }
 
-static inline void swap_struct_pairwise_and_system(char *str, size_t *offsets, size_t *sizes, size_t n_attr){
-    size_t i;
+static inline void swapXX_little_and_system(
+    char *str, size_t *offsets, size_t *sizes, size_t *n_elements, size_t n_attr
+){
+    #ifdef IS_BIG_ENDIAN
+    size_t i, j;
     char *attr;
-    for(i=0; i < n_attr; ++i, ++offsets, ++sizes){
+    for(i=0; i < n_attr; ++i, ++offsets, ++sizes, ++n_elements){
         attr = str + *offsets;
         if(*sizes == 2){
-            // 2 byte pairswapped is same a little endian?
-            #ifdef IS_BIG_ENDIAN
-            if(spy_is_aligned(attr, 2)){
-                uint16_t *t16 = (uint16_t *) attr;
+            spy_uint16 *t16 = (spy_uint16 *) attr;
+            for(j=0; j<*n_elements; ++j, ++t16){
                 *t16 = spy_bswap_u16(*t16);
-            }else{
-                spy_bswap2_unaligned(attr);
+            }
+        }else if(*sizes == 4){
+            spy_uint32 *t32 = (spy_uint32 *) attr;
+            for(j=0; j<*n_elements; ++j, ++t32){
+                *t32 = spy_bswap_u32(*t32);
+            }
+        }else if(*sizes == 8){
+            spy_uint64 *t64 = (spy_uint64 *) attr;
+            for(j=0; j<*n_elements; ++j, ++t64){
+                *t64 = spy_bswap_u64(*t64);
+            }
+        }
+    }
+    #endif
+}
+
+static inline void swapXX_pairwise_and_system(
+    char *str, size_t *offsets, size_t *sizes, size_t *n_elements, size_t n_attr
+){
+    size_t i, j;
+    char *attr;
+    for(i=0; i < n_attr; ++i, ++offsets, ++sizes, ++n_elements){
+        attr = str + *offsets;
+        if(*sizes == 2){
+            #ifdef IS_BIG_ENDIAN
+            spy_uint16 *t16 = (spy_uint16 *) attr;
+            for(j=0; j<*n_elements; ++j, ++t16){
+                *t16 = spy_prw_big_bswap_u16(*t16);
             }
             #endif
         }else if(*sizes == 4){
-             if(spy_is_aligned(attr, 4)){
-                uint32_t *t32 = (uint32_t *) attr;
+            spy_uint32 *t32 = (spy_uint32 *) attr;
+            for(j=0; j<*n_elements; ++j, ++t32){
                 #ifdef IS_BIG_ENDIAN
                 *t32 = spy_prw_big_bswap_u32(*t32);
                 #elif defined(IS_LITTLE_ENDIAN)
                 *t32 = spy_prw_lil_bswap_u32(*t32);
                 #endif
-            }else{
-                #ifdef IS_BIG_ENDIAN
-                spy_prw_big_bswap4_unaligned(attr);
-                #elif defined(IS_LITTLE_ENDIAN)
-                spy_prw_lil_bswap4_unaligned(attr);
-                #endif
             }
         }else if(*sizes == 8){
-             if(spy_is_aligned(attr, 8)){
-                uint64_t *t64 = (uint64_t *) attr;
-                t64 = (uint64_t *) attr;
+            spy_uint64 *t64 = (spy_uint64 *) attr;
+            for(j=0; j<*n_elements; ++j, ++t64){
                 #ifdef IS_BIG_ENDIAN
                 *t64 = spy_prw_big_bswap_u64(*t64);
                 #elif defined(IS_LITTLE_ENDIAN)
                 *t64 = spy_prw_lil_bswap_u64(*t64);
-                #endif
-            }else{
-                #ifdef IS_BIG_ENDIAN
-                spy_prw_big_bswap8_unaligned(attr);
-                #elif defined(IS_LITTLE_ENDIAN)
-                spy_prw_lil_bswap8_unaligned(attr);
                 #endif
             }
         }

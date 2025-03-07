@@ -1,4 +1,5 @@
 subdir('su')
+subdir('include')
 subdir('io')
 subdir('filters')
 subdir('synthetics')
@@ -23,4 +24,5 @@ py.extension_module(
     install: true,
     subdir: module_path,
     dependencies : [py_dep, su_dep],
+    include_directories: spy_include,
 )

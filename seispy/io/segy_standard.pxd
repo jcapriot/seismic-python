@@ -1,4 +1,4 @@
-from libc.stdint cimport (
+from ..config cimport (
     uint8_t as ui1,
     uint16_t as ui2,
     uint32_t as ui4,
@@ -6,8 +6,9 @@ from libc.stdint cimport (
     int16_t as i2,
     int32_t as i4,
     int64_t as i8,
+    float32_t as f4,
+    float64_t as f8,
 )
-from numpy cimport float64_t as r8
 
 # constants to be defined in segy_standard.pyx
 cdef:
@@ -191,8 +192,8 @@ cdef struct binary_header:
     ui4 next_trace_per_ensemble
     ui4 next_aux_trace_per_ensemble
     ui4 next_sample_per_trace
-    r8 dext_sample # in \mu s, Hz, m, or ft.
-    r8 dext_sample_field # in \mu s, Hz, m, or ft.
+    f8 dext_sample # in \mu s, Hz, m, or ft.
+    f8 dext_sample_field # in \mu s, Hz, m, or ft.
     ui4 next_sample_per_trace_field
     ui4 next_fold
     i4 byte_order_id
@@ -312,27 +313,27 @@ cdef struct extended_trace_header:
     ui8 reeltrc
     i8 ffid
     i8 cdp
-    r8 relev
-    r8 rdepth
-    r8 selev
-    r8 sdepth
-    r8 rdatum
-    r8 sdatum
-    r8 wdepthso
-    r8 wdepthrc
-    r8 sht_x
-    r8 sht_y
-    r8 rec_x
-    r8 rec_y
-    r8 offset
+    f8 relev
+    f8 rdepth
+    f8 selev
+    f8 sdepth
+    f8 rdatum
+    f8 sdatum
+    f8 wdepthso
+    f8 wdepthrc
+    f8 sht_x
+    f8 sht_y
+    f8 rec_x
+    f8 rec_y
+    f8 offset
     ui4 nsamps
     i4 nanosec
-    r8 dt
+    f8 dt
     i4 cable_num
     ui2 n_exttrchdr
     i2 last_trc
-    r8 cdp_x
-    r8 cdp_y
+    f8 cdp_x
+    f8 cdp_y
     char[56] reserved
     char[8] header_name
 

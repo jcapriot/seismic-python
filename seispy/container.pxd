@@ -1,4 +1,3 @@
-from aiohttp.web_routedef import static
 from libc.stdio cimport FILE
 from .io cimport spy_off_t
 cimport cython

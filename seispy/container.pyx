@@ -7,7 +7,6 @@ from libc.stdlib cimport malloc, free
 from libc.string cimport memset, memcpy
 cimport cython
 cimport cpython.buffer as pybuf
-from cpython cimport PyObject
 
 from .io cimport PyFile_Dup, PyFile_DupClose, spy_off_t, spy_fseek
 
