@@ -1,13 +1,12 @@
 # cython: embedsignature=True, language_level=3
 # cython: linetrace=True
 
-from ..container cimport (
-    Trace, TraceCollection, BaseTraceIterator, spy_trace, spy_trace_header, new_trace, SPY_TX_GATHER
-)
+from .. cimport container as spyc
 import numpy as np
 from libc.math cimport fabs
+from libc.stdlib cimport malloc
 
-cdef class plane(BaseTraceIterator):
+cdef class plane(spyc.BaseTraceIterator):
     cdef:
         size_t nt
         double dt
@@ -65,27 +64,21 @@ cdef class plane(BaseTraceIterator):
         self.taper = taper
 
         self.hdr.n_traces = ntr
-        self.hdr.ensemble_type = SPY_TX_GATHER
+        self.hdr.ensemble_type = spyc.EnsembleType.tx_gather
         self.hdr.uniform_traces = True
         self.n_planes = self.dips.shape[0]
 
-    cdef Trace next_trace(self):
+    cdef spyc.Trace next_trace(self):
         if self.i == self.hdr.n_traces:
             raise StopIteration()
         cdef:
-            spy_trace *tr = new_trace(self.nt)
-            spy_trace_header *hdr = &(tr.hdr)
             int i, tfe, itr, itless, itmore, cx_i, dt_i, len_i
             float eps, fit, dip_i
 
         itr = self.i
 
-        hdr.d_sample = self.dt
-        hdr.offset = fabs(self.offset)
-        hdr.line_id = 1
-        hdr.trace_id = self.i + 1
-        hdr.tx_loc[0] = self.i
-        hdr.rx_loc[0] = self.i + self.offset
+
+        cdef float[::1] data = <float[:self.nt]> malloc(sizeof(float) * self.nt)
 
         for i in range(self.n_planes):
             tfe = self.tfes[i]
@@ -103,20 +96,29 @@ cdef class plane(BaseTraceIterator):
                     itless = <int> fit
                     eps = fit - itless
                     itmore = <int> (fit + 1)
-                    tr.data[itless] += 1.0 - eps
-                    tr.data[itmore] += eps
+                    data[itless] += 1.0 - eps
+                    data[itmore] += eps
 
                     # taper option
                     if self.taper:
                         # first or last point
                         if tfe == 0 or tfe == len_i:
-                            tr.data[itless] /= 6.0
-                            tr.data[itmore] /= 6.0
+                            data[itless] /= 6.0
+                            data[itmore] /= 6.0
                         # second or next-to-last point
                         if tfe == 1 or tfe == len_i-1:
-                            tr.data[itless] /= 3.0
-                            tr.data[itmore] /= 3.0
+                            data[itless] /= 3.0
+                            data[itmore] /= 3.0
 
                 self.tfes[i] += 1
+
+        cdef spyc.spy_trace_header *hdr = spyc.new_hdr()
+        hdr.d_sample = self.dt
+        hdr.offset = fabs(self.offset)
+        hdr.line_id = 1
+        hdr.trace_id = self.i + 1
+        hdr.tx_loc[0] = self.i
+        hdr.rx_loc[0] = self.i + self.offset
+
         self.i += 1
-        return Trace.from_trace(tr, True, True)
+        return spyc.Trace.from_trace(hdr, data, True)

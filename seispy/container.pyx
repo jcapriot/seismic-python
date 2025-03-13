@@ -14,53 +14,40 @@ import os
 from contextlib import nullcontext
 import numpy as np
 
-cdef spy_trace* new_trace(size_t n_sample, bint zero_fill=True) noexcept nogil:
-    cdef spy_trace *tr = <spy_trace *> malloc(SPY_TRC_SIZE)
-    memset(tr, 0, SPY_TRC_HDR_SIZE)
-    if n_sample > 0:
-        tr.hdr.n_sample = n_sample
-        tr.data = <float *> malloc(sizeof(float) * n_sample)
-        if zero_fill:
-            memset(tr.data, 0, sizeof(float) * n_sample)
-    else:
-        tr.data = NULL
-    return tr
+cdef size_t SPY_TRC_HDR_SIZE = sizeof(spy_trace_header)
 
-cdef spy_trace* copy_of(spy_trace *tr_in, bint copy_data=True) noexcept nogil:
-    cdef spy_trace *tr_copy = <spy_trace *> malloc(SPY_TRC_SIZE)
-    memcpy(tr_copy, tr_in, SPY_TRC_HDR_SIZE)
-    cdef size_t n_sample = tr_in.hdr.n_sample
-    if n_sample > 0:
-        tr_copy.data = <float *> malloc(sizeof(float) * n_sample)
-        memcpy(tr_copy.data,  tr_in.data, sizeof(float) * n_sample)
-    else:
-        tr_copy.data = NULL
-    return tr_copy
+cdef spy_trace_header* new_hdr(size_t n_sample=0) nogil:
+    cdef spy_trace_header *hdr = <spy_trace_header *> malloc(SPY_TRC_HDR_SIZE)
+    if hdr is NULL:
+        with gil:
+            raise MemoryError("Unable to allocate a new seispy trace header.")
+    memset(hdr, 0, SPY_TRC_HDR_SIZE)
+    hdr.n_sample = n_sample
+    return hdr
 
-cdef void del_trace(spy_trace *tp, bint del_data) noexcept nogil:
-    if (tp != NULL) and del_data:
-        if tp.data != NULL:
-            free(tp.data)
-        tp.data = NULL
-    free(tp)
+cdef spy_trace_header* copy_of_hdr(spy_trace_header *hdr_in) nogil:
+    cdef spy_trace_header *hdr = <spy_trace_header *> malloc(SPY_TRC_HDR_SIZE)
+    if hdr is NULL:
+        with gil:
+            raise MemoryError("Unable to allocate a copy of a seispy trace header.")
+    memcpy(hdr, hdr_in, SPY_TRC_HDR_SIZE)
+    return hdr
 
-_SAMPLING_MAP = {'s': SPY_SMPLNG_UNIT_SEC, 'm':SPY_SMPLNG_UNIT_METER}
-_DOMAIN_MAP = {'unit':SPY_SMPLNG_DOM_UNIT, 'fourier':SPY_SMPLNG_DOM_FOURIER}
+_SAMPLING_MAP = {'s':SamplingUnit.seconds, 'm':SamplingUnit.meters}
+_DOMAIN_MAP = {'unit':SamplingDomain.unit, 'fourier':SamplingDomain.fourier}
 
 @cython.final
 cdef class Trace:
 
     def __cinit__(self):
-        self.tr = NULL
-        self.trace_owner = False
-        self.data_owner = False
+        self.hdr = NULL
+        self.hdr_owner = False
 
     def __dealloc__(self):
 
         # De-allocate if not null and flag is set
-        if self.tr is not NULL and self.trace_owner:
-            del_trace(self.tr, self.data_owner)
-            self.tr = NULL
+        if self.hdr is not NULL and self.hdr_owner:
+            free(self.hdr)
 
     def __init__(
         self,
@@ -74,12 +61,9 @@ cdef class Trace:
 
     ):
         self.trace_data = np.require(data, dtype=np.float32, requirements='C')
-        cdef spy_trace *tr = new_trace(0)
-        cdef spy_trace_header *hdr = &tr.hdr
-        if tr is NULL:
+        cdef spy_trace_header *hdr = new_hdr()
+        if hdr is NULL:
             raise MemoryError("Unable to allocate trace.")
-
-        tr.data = &self.trace_data[0]
         hdr.n_sample = self.trace_data.shape[0]
         hdr.d_sample = d_sample
         hdr.sample_start = sample_start
@@ -100,64 +84,58 @@ cdef class Trace:
         except KeyError:
             raise KeyError("Trace expected `sampling_domain` to be one of 'unit' (seconds) or 'fourier' (meters).")
 
-        self.tr = tr
-        self.trace_owner = True
-        self.trace_data_owner = False
+        self.hdr = hdr
+        self.hdr_owner = True
 
     def __len__(self):
-        return self.tr.hdr.n_sample
+        return self.n_sample
 
     @property
     def n_sample(self):
-        return self.tr.hdr.n_sample
+        return self.data.shape[0]
 
     @property
     def d_sample(self):
-        return self.tr.hdr.d_sample
+        return self.hdr.d_sample
 
     @staticmethod
-    cdef Trace from_trace(spy_trace *tr, bint trace_owner=False, bint data_owner=False):
-        cdef Trace cy_trace = Trace.__new__(Trace)
-        cy_trace.tr = tr
-        cy_trace.trace_data = <float[:tr.hdr.n_sample]> tr.data
-        cy_trace.trace_owner = trace_owner
-        cy_trace.data_owner = data_owner
-        return cy_trace
+    cdef Trace from_trace(spy_trace_header *hdr, float[::1] data, bint hdr_owner=False):
+        cdef Trace tr = Trace.__new__(Trace)
+        tr.hdr = hdr
+        tr.hdr.n_sample = data.shape[0]
+        tr.data = data
+        tr.hdr_owner = hdr_owner
+        return tr
 
     @staticmethod
     cdef Trace from_file_descriptor(FILE *fd):
 
-        cdef spy_trace *tr = new_trace(0)
-        if tr is NULL:
-            raise MemoryError("Unable to allocate trace structure.")
         cdef:
+            spy_trace_header *hdr = new_hdr()
             size_t n_read
             size_t n_sample
 
-        n_read = fread(tr, SPY_TRC_HDR_SIZE, 1, fd)
+        n_read = fread(hdr, SPY_TRC_HDR_SIZE, 1, fd)
         if n_read != 1:
-            del_trace(tr, 1)
+            free(hdr)
             raise IOError("Unable to read trace header from file.")
 
-        n_sample = tr.hdr.n_sample
-        tr.data = <float *> malloc(sizeof(float)*n_sample)
-        if tr.data is NULL:
-            free(tr)
-            raise MemoryError("Unable to allocate trace data.")
-        n_read = fread(tr.data, sizeof(float), n_sample, fd)
+        n_sample = hdr.n_sample
+        cdef float[::1] data = <float[:n_sample]> malloc(sizeof(float)*n_sample)
+
+        n_read = fread(&data[0], sizeof(float), n_sample, fd)
         if n_read != n_sample:
-            free(tr.data)
             raise IOError("Unable to read expected number of trace samples.")
 
-        return Trace.from_trace(tr, True, True)
+        return Trace.from_trace(hdr, data, True)
 
     cdef to_file_descriptor(self, FILE *fd):
-        cdef size_t n_write = fwrite(self.tr, SPY_TRC_HDR_SIZE, 1, fd)
+        cdef size_t n_write = fwrite(self.hdr, SPY_TRC_HDR_SIZE, 1, fd)
         if n_write != 1:
             raise IOError("Error writing trace header to file.")
 
-        n_write = fwrite(self.tr.data, sizeof(float), self.n_sample, fd)
-        if n_write != self.n_sample:
+        n_write = fwrite(&self.data[0], sizeof(float), self.hdr.n_sample, fd)
+        if n_write != self.hdr.n_sample:
             raise IOError("Error writing trace data to file.")
 
     @staticmethod
@@ -167,48 +145,41 @@ cdef class Trace:
             raise ValueError(f"Incorrect number of bytes, expected at least {SPY_TRC_HDR_SIZE}, got {bys.shape[0]}.")
 
         cdef:
-            spy_trace *tr = new_trace(0)
+            spy_trace_header *hdr = new_hdr()
             size_t n_sample
-        if tr is NULL:
-            raise MemoryError("Unable to allocate trace structure.")
         # copy header bytes
-        memcpy(tr, &bys[0], SPY_TRC_HDR_SIZE)
+        memcpy(hdr, &bys[0], SPY_TRC_HDR_SIZE)
 
-        n_sample = tr.hdr.n_sample
+        n_sample = hdr.n_sample
 
         cdef size_t n_total_size = SPY_TRC_HDR_SIZE + sizeof(float)*n_sample
         if bys.shape[0] != n_total_size:
-            free(tr)
+            free(hdr)
             raise ValueError(f"Incorrect number of bytes, expected {n_total_size}, got {bys.shape[0]}.")
 
-        tr.data = <float *> malloc(sizeof(float)*n_sample)
-        if tr.data is NULL:
-            free(tr)
-            raise MemoryError("Unable to allocate trace data.")
+        cdef float[::1] data = <float[:n_sample]> malloc(sizeof(float)*n_sample)
         # copy data bytes
-        memcpy(tr.data, &bys[SPY_TRC_HDR_SIZE], sizeof(float)*n_sample)
+        memcpy(&data[0], &bys[SPY_TRC_HDR_SIZE], sizeof(float)*n_sample)
 
-        return Trace.from_trace(tr, True, True)
+        return Trace.from_trace(hdr, data, True)
 
     cpdef unsigned char[::1] as_bytes(self):
-        cdef size_t data_size = sizeof(float) * self.n_sample
+        cdef size_t data_size = sizeof(float) * self.data.shape[0]
         cdef size_t trace_size = SPY_TRC_HDR_SIZE + data_size
         cdef unsigned char[::1] bys = <unsigned char[:trace_size]> malloc(trace_size)
-        memcpy(&bys[0], self.tr, SPY_TRC_HDR_SIZE)
-        memcpy(&bys[SPY_TRC_HDR_SIZE], self.tr.data, data_size)
+        memcpy(&bys[0], self.hdr, SPY_TRC_HDR_SIZE)
+        memcpy(&bys[SPY_TRC_HDR_SIZE], &self.data[0], data_size)
         return bys
 
     def __getbuffer__(self, Py_buffer *buffer, int flags):
-        cdef Py_ssize_t itemsize = sizeof(float)
-
         buffer.obj = self
-        buffer.buf = <void *> self.tr.data
-        buffer.len = self.n_sample
-        buffer.itemsize = itemsize
+        buffer.buf = <void *> &self.data[0]
+        buffer.len = self.data.shape[0]
+        buffer.itemsize = sizeof(float)
         buffer.ndim = 1
 
-        buffer.shape = self.trace_data.shape
-        buffer.strides = self.trace_data.strides
+        buffer.shape = self.data.shape
+        buffer.strides = self.data.strides
         buffer.readonly = 0
 
         if flags & pybuf.PyBUF_FORMAT:
@@ -217,7 +188,7 @@ cdef class Trace:
             buffer.format = NULL
 
         buffer.internal = NULL
-        buffer.suboffsets = NULL
+        buffer.suboffsets = NULL #self.data.suboffsets
 
     def __releasebuffer__(self, Py_buffer *buffer):
         pass

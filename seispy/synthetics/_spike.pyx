@@ -1,12 +1,11 @@
 # cython: embedsignature=True, language_level=3
 # cython: linetrace=True
 
-from ..container cimport (
-    Trace, TraceCollection, BaseTraceIterator, spy_trace, spy_trace_header, new_trace, SPY_TX_GATHER
-)
+from .. cimport container as spyc
+from libc.stdlib cimport malloc
 import numpy as np
 
-cdef class spike(BaseTraceIterator):
+cdef class spike(spyc.BaseTraceIterator):
     cdef:
         size_t nt
         double dt
@@ -18,7 +17,7 @@ cdef class spike(BaseTraceIterator):
         self.nt = nt
 
         self.hdr.n_traces = ntr
-        self.hdr.ensemble_type = SPY_TX_GATHER
+        self.hdr.ensemble_type = spyc.EnsembleType.rx_gather
         self.hdr.uniform_traces = True
         self.dt = dt
         self.offset = offset
@@ -33,21 +32,20 @@ cdef class spike(BaseTraceIterator):
 
         self.spikes = np.require(spikes, dtype=np.int32, requirements='C')
 
-    cdef Trace next_trace(self):
+    cdef spyc.Trace next_trace(self):
         if self.i == self.hdr.n_traces:
             raise StopIteration()
-        cdef:
-            spy_trace *tr = new_trace(self.nt)
-            spy_trace_header *hdr = &(tr.hdr)
-            int it, ix
+        cdef float[::1] data = <float[:self.nt]> malloc(sizeof(float) * self.nt)
+        for spike in self.spikes:
+            if spike[0] == self.i:
+                data[spike[1]] = 1.0
+        cdef spyc.spy_trace_header *hdr = spyc.new_hdr()
 
         hdr.d_sample = self.dt
         hdr.tx_loc[0] = self.i
         hdr.rx_loc[0] = self.i + self.offset
         hdr.offset = self.offset
         hdr.trace_id = self.i + 1
-        for spike in self.spikes:
-            if spike[0] == self.i:
-                tr.data[spike[1]] = 1.0
+
         self.i += 1
-        return Trace.from_trace(tr, True, True)
+        return spyc.Trace.from_trace(hdr, data, True)

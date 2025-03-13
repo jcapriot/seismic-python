@@ -2,9 +2,8 @@ from libc.stdio cimport FILE
 from .io cimport spy_off_t
 cimport cython
 
-cdef extern from "spy_trace.h" nogil:
-
-    ctypedef struct spy_trace_header:
+cdef:
+    struct spy_trace_header:
         size_t n_sample
         double d_sample
         double sample_start
@@ -19,37 +18,35 @@ cdef extern from "spy_trace.h" nogil:
         int sampling_unit               # 0 = s, 1  = meters
         int sampling_domain             # 0 (sample unit domain), 1 = sample_unit fourier domain
 
-    ctypedef struct spy_trace:
-        spy_trace_header hdr
-        float *data
+    size_t SPY_TRC_HDR_SIZE
 
-    int SPY_TRC_HDR_SIZE
-    int SPY_TRC_SIZE
-    int SPY_SMPLNG_UNIT_SEC
-    int SPY_SMPLNG_UNIT_METER
-    int SPY_SMPLNG_DOM_UNIT
-    int SPY_SMPLNG_DOM_FOURIER
+    enum SamplingUnit:
+        seconds
+        meters
 
-    int SPY_UNKNOWN
-    int SPY_TX_GATHER
-    int SPY_RX_GATHER
-    int SPY_COMMON_MIDPOINT
-    int SPY_COMMON_OFFSET
+    enum SamplingDomain:
+        unit
+        fourier
 
-cdef spy_trace* new_trace(size_t n_sample, bint zero_fill=?) noexcept nogil
-cdef spy_trace* copy_of(spy_trace *tr_in, bint copy_data=?) noexcept nogil
-cdef void del_trace(spy_trace *tp, bint del_data) noexcept nogil
+    enum EnsembleType:
+        unknown
+        tx_gather
+        rx_gather
+        common_midpoint
+        common_offset
+
+    spy_trace_header* new_hdr(size_t n_sample=?) nogil
+    spy_trace_header* copy_of_hdr(spy_trace_header *hdr_in) nogil
 
 @cython.final
 cdef class Trace:
     cdef:
-        spy_trace* tr
-        bint trace_owner
-        bint data_owner
-        float[::1] trace_data # For holding a reference if it came from python
+        spy_trace_header* hdr
+        bint hdr_owner
+        float[::1] data
 
     @staticmethod
-    cdef Trace from_trace(spy_trace *trace, bint trace_owner=?, bint data_owner=?)
+    cdef Trace from_trace(spy_trace_header *hdr, float[::1] data, bint hdr_owner=?)
 
     @staticmethod
     cdef Trace from_file_descriptor(FILE *fd)

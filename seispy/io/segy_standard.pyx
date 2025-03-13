@@ -223,14 +223,14 @@ cdef class SEGYTrace:
     cdef SEGYTrace from_spy_trace(spyc.Trace spy_tr, spyc.CollectionHeader coll_hdr):
         cdef:
             SEGYTrace segy = SEGYTrace.__new__(SEGYTrace)
-            spyc.spy_trace_header *spy_hdr = &spy_tr.tr.hdr
+            spyc.spy_trace_header *spy_hdr = spy_tr.hdr
             trace_header *hdr = &segy.hdr
             extended_trace_header *ext_hdr = &segy.ext_hdr
             double t0_mantissa
             int t0_exp
             i2 t_scale = 0
         with nogil:
-            segy.data = spy_tr.trace_data
+            segy.data = spy_tr.data
 
             ext_hdr.nsamps = spy_hdr.n_sample
             ext_hdr.dt = spy_hdr.d_sample * 1_000_000.0 # in micro seconds

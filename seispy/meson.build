@@ -1,4 +1,3 @@
-subdir('su')
 subdir('include')
 subdir('io')
 subdir('filters')
