@@ -89,39 +89,36 @@ cdef (FILE *, spy_off_t) PyFile_Dup(object file, char* mode)
 cdef int PyFile_DupClose(object file, FILE* handle, spy_off_t orig_pos)
 
 cdef size_t write_struct_to_file(
-    char *st,
-    size_t *offsets,
-    size_t *sizes,
-    size_t *n_elements,
-    size_t n_attr,
-    FILE *fd
+    void *st,
+    size_t[:, ::1] struct_info,
+    bint is_packed,
+    size_t expected_size,
+    FILE *fd,
 ) noexcept nogil
 
 cdef size_t read_struct_from_file(
-    char *st,
-    size_t *offsets,
-    size_t *sizes,
-    size_t *n_elements,
-    size_t n_attr,
-    FILE *fd
+    void *st,
+    size_t[:, ::1] struct_info,
+    bint is_packed,
+    size_t expected_size,
+    FILE *fd,
+    str file_endian_flag,
 ) noexcept nogil
 
 cdef void copy_struct_to_char(
-    char *st,
-    size_t *offsets,
-    size_t *sizes,
-    size_t *n_elements,
-    size_t n_attr,
-    char *out
+    void *in_struct,
+    size_t[:, ::1] struct_info,
+    bint is_packed,
+    size_t expected_size,
+    char *out_chrs
 ) noexcept nogil
 
 cdef void copy_struct_from_char(
-    char *st,
-    size_t *offsets,
-    size_t *sizes,
-    size_t *n_elements,
-    size_t n_attr,
-    char *out
+    void *out_struct,
+    size_t[:, ::1] struct_info,
+    bint is_packed,
+    size_t expected_size,
+    char *in_chrs
 ) noexcept nogil
 
 cpdef size_t[:,::1] struct_dtype_info(object struct_dtype)

@@ -1,7 +1,7 @@
 cimport cython
 from libc.stdlib cimport malloc
 
-cpdef swappable swap_endian_and_system(swappable x, endian='>'):
+cpdef swappable swap_endian_and_system(swappable x, str endian='>'):
     cdef swappable _x
 
     if endian == '>':
@@ -40,7 +40,7 @@ cpdef swappable swap_endian_and_system(swappable x, endian='>'):
 
 
 @cython.boundscheck(False)
-cpdef swappable[::1] swap_endian_and_system_array(swappable[::1] x, endian='>', bint inplace=True):
+cpdef swappable[::1] swap_endian_and_system_array(swappable[::1] x, str endian='>', bint inplace=True):
     cdef size_t n = x.shape[0]
     cdef size_t target_size = sizeof(swappable)
     cdef int endian_target

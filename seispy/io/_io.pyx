@@ -1,12 +1,14 @@
 # cython: embedsignature=True, language_level=3
 # cython: linetrace=True
-
 from cpython.object cimport PyObject_AsFileDescriptor
 from libc.stdio cimport FILE, fclose, SEEK_SET, fwrite, fread
 from libc.limits cimport INT_MIN, INT_MAX
 from libc.stdlib cimport malloc
+from libc.string cimport memcpy
+cimport cython
 import os
 import io
+from . cimport byteswapping as bswap
 
 """
 This module is meant to handle getting a C FILE pointer to an open python file object. It's contents
@@ -107,93 +109,120 @@ cdef int PyFile_DupClose(object file, FILE * handle, spy_off_t orig_pos):
     file.seek(position)
     return 0
 
+@cython.boundscheck(False)
 cdef size_t write_struct_to_file(
-        char *st,
-        size_t *offsets,
-        size_t *sizes,
-        size_t *n_elements,
-        size_t n_attr,
-        FILE *fd
+        void *in_struct,
+        size_t[:, ::1] struct_info,
+        bint is_packed,
+        size_t expected_size,
+        FILE *fd,
 ) noexcept nogil:
-    """
-    If a struct has padding between its members, you should use this to
-    write to a file, as it explicitly does not include any platform/compiler
-    specific padding between members.
-    
-    Otherwise, you can just use fwrite(&st, sizeof(st), 1, fd)
-    """
     cdef:
         size_t i, n_bytes_written
+        char *st = <char *> in_struct
         char *attr
-    for i in range(n_attr):
-        attr = st + offsets[i]
-        n_bytes_written += fwrite(attr, 1, sizes[i] * n_elements[i], fd)
+        size_t[::1] offsets = struct_info[0]
+        size_t[::1] sizes = struct_info[1]
+        size_t[::1] n_elements = struct_info[2]
+        size_t n_attr = struct_info.shape[1]
+    if is_packed:
+        n_bytes_written = fwrite(st, 1, expected_size, fd)
+    else:
+        n_bytes_written = 0
+        for i in range(n_attr):
+            attr = st + offsets[i]
+            n_bytes_written += fwrite(attr, 1, sizes[i] * n_elements[i], fd)
     return n_bytes_written
 
+@cython.boundscheck(False)
 cdef size_t read_struct_from_file(
-        char *st,
-        size_t *offsets,
-        size_t *sizes,
-        size_t *n_elements,
-        size_t n_attr,
-        FILE *fd
+        void *out_struct,
+        size_t[:, ::1] struct_info,
+        bint is_packed,
+        size_t expected_size,
+        FILE *fd,
+        str file_endian_flag,
 ) noexcept nogil:
-    """
-    If a struct has padding, you should use this to write to a file,
-    as it explicitly does not include any platform/compiler specific
-    padding between members.
-    
-    Otherwise, you can just use fread(&st, sizeof(st), 1, fd)
-    """
     cdef:
         size_t i, n_bytes_read
+        char *st = <char *> out_struct
         char *attr
-    for i in range(n_attr):
-        attr = st + offsets[i]
-        n_bytes_read += fread(attr, 1, sizes[i] * n_elements[i], fd)
+        size_t[::1] offsets = struct_info[0]
+        size_t[::1] sizes = struct_info[1]
+        size_t[::1] n_elements = struct_info[2]
+        size_t n_attr = struct_info.shape[1]
+
+    if is_packed:
+        n_bytes_read = fread(st, 1, expected_size, fd)
+    else:
+        n_bytes_read = 0
+        for i in range(n_attr):
+            attr = st + offsets[i]
+            n_bytes_read += fread(attr, 1, sizes[i] * n_elements[i], fd)
+
+    if n_bytes_read == expected_size:
+        if file_endian_flag == ">":
+            bswap.swapXX_big_and_system(
+                st, &offsets[0], &sizes[0], &n_elements[0], n_attr
+            )
+        elif file_endian_flag == "<":
+            bswap.swapXX_little_and_system(
+                st, &offsets[0], &sizes[0], &n_elements[0], n_attr
+            )
+        elif file_endian_flag == "<>":
+            bswap.swapXX_pairwise_and_system(
+                st, &offsets[0], &sizes[0], &n_elements[0], n_attr
+            )
+
     return n_bytes_read
 
+@cython.boundscheck(False)
 cdef void copy_struct_to_char(
-        char *st,
-        size_t *offsets,
-        size_t *sizes,
-        size_t *n_elements,
-        size_t n_attr,
-        char *out
+    void *in_struct,
+    size_t[:, ::1] struct_info,
+    bint is_packed,
+    size_t expected_size,
+    char *out_chrs
 ) noexcept nogil:
-    """
-    If a struct has padding, and you don't want to include that padding
-    in the byte array, you should use this to copy it in, as it explicitly
-    does not include any platform/compiler specific padding between members.
-    
-    Otherwise, you can just memcpy the two...
-    """
-    cdef size_t i, j
-    for i in range(n_attr):
-        for j in range(offsets[i], offsets[i] + n_elements[i] * sizes[i]):
-            out[0] = st[j]
-            out += 1
+    cdef:
+        size_t i, j
+        char * st = <char *> in_struct
+        size_t[::1] offsets = struct_info[0]
+        size_t[::1] sizes = struct_info[1]
+        size_t[::1] n_elements = struct_info[2]
+        size_t n_attr = offsets.shape[1]
 
+    if is_packed:
+        memcpy(out_chrs, st, expected_size)
+    else:
+        for i in range(n_attr):
+            for j in range(offsets[i], offsets[i] + n_elements[i] * sizes[i]):
+                out_chrs[0] = st[j]
+                out_chrs += 1
+
+@cython.boundscheck(False)
 cdef void copy_struct_from_char(
-        char *st,
-        size_t *offsets,
-        size_t *sizes,
-        size_t *n_elements,
-        size_t n_attr,
-        char *out
+    void *out_struct,
+    size_t[:, ::1] struct_info,
+    bint is_packed,
+    size_t expected_size,
+    char *in_chrs
 ) noexcept nogil:
-    """
-    If a struct has padding, and that padding isn't included in the byte
-    array, you should use this to copy it in, as it explicitly does not
-    include any platform/compiler specific padding between members.
-    
-    Otherwise, you can just memcpy the two...
-    """
-    cdef size_t i, j
-    for i in range(n_attr):
-        for j in range(offsets[i], offsets[i] + n_elements[i] * sizes[i]):
-            st[j] = out[0]
-            out += 1
+    cdef:
+        size_t i, j
+        char * st = <char *> out_struct
+        size_t[::1] offsets = struct_info[0]
+        size_t[::1] sizes = struct_info[1]
+        size_t[::1] n_elements = struct_info[2]
+        size_t n_attr = offsets.shape[1]
+
+    if is_packed:
+        memcpy(out_struct, st, expected_size)
+    else:
+        for i in range(n_attr):
+            for j in range(offsets[i], offsets[i] + n_elements[i] * sizes[i]):
+                st[j] = in_chrs[j]
+                in_chrs += 1
 
 cpdef size_t[:,::1] struct_dtype_info(object struct_dtype):
     """
@@ -202,7 +231,7 @@ cpdef size_t[:,::1] struct_dtype_info(object struct_dtype):
 
     Returns
     -------
-    sizes, offsets, n_elements : (n_attr,) memoryview of size_t
+    offsets, sizes, n_elements : (n_attr,) memoryview of size_t
 
     Examples
     --------
@@ -216,13 +245,13 @@ cpdef size_t[:,::1] struct_dtype_info(object struct_dtype):
 
     The corresponding info about the dtype would be:
     >>> ex_dtype = np.dtype('i4,i2,3f4')
-    >>> sizes, offsets, n_elements = struct_dtype_info(ex_dtype)
+    >>> offsets, sizes, n_elements = struct_dtype_info(ex_dtype)
     >>> for s, o, n in zip(sizes, offsets, n_elements):
-    ...    print(f'itemsize: {s}, offset: {o}, n_elements:{n}')
+    ...    print(f'offset: {o}, itemsize: {s}, n_elements:{n}')
     ...
-    itemsize: 4, offset: 0, n_elements:1
-    itemsize: 2, offset: 4, n_elements:1
-    itemsize: 4, offset: 6, n_elements:3
+    offset: 0, itemsize: 4, n_elements:1
+    offset: 4, itemsize: 2, n_elements:1
+    offset: 6, itemsize: 4, n_elements:3
 
     Notes
     -----
@@ -233,8 +262,8 @@ cpdef size_t[:,::1] struct_dtype_info(object struct_dtype):
     cdef:
         size_t n_attrs = len(struct_dtype)
         size_t[:,::1] info = <size_t[:3, :n_attrs]> malloc(3 * sizeof(size_t)*n_attrs)
-        # info[0] sizes
-        # info[1] offsets
+        # info[0] offsets
+        # info[1] sizes
         # info[2] n_elements
 
     for i, name in enumerate(struct_dtype.names):
@@ -247,7 +276,7 @@ cpdef size_t[:,::1] struct_dtype_info(object struct_dtype):
             dtype = subdtype
         else:
             n_elements = 1
-        info[0, i] = dtype.itemsize
-        info[1, i] = offset
+        info[0, i] = offset
+        info[1, i] = dtype.itemsize
         info[2, i] = n_elements
     return info

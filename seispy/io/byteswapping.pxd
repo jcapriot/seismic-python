@@ -48,4 +48,5 @@ ctypedef fused swappable:
     float32_t
     float64_t
 
-cpdef swappable swap_endian_and_system(swappable x, endian=?)
+cpdef swappable swap_endian_and_system(swappable x, str endian=?)
+cpdef swappable[::1] swap_endian_and_system_array(swappable[::1] x, str endian=?, bint inplace=?)

@@ -306,7 +306,7 @@ cdef struct trace_header:
     i4 smeasure_mantis # 225
     i2 smeasuret_scale # 229
     i2 src_units # 231
-    char[8] end
+    char[8] header_name
 
 cdef struct extended_trace_header:
     ui8 linetrc

@@ -207,9 +207,6 @@ cdef class CollectionHeader:
     @staticmethod
     cdef CollectionHeader from_file_descriptor(FILE *fd):
         cdef CollectionHeader hdr = CollectionHeader.__new__(CollectionHeader)
-        # cdef size_t n_read = fread(&hdr.n_traces, CollectionHeader.get_cstruct_byte_size(), 1, fd)
-        # if n_read != 1:
-        #     raise IOError("Error reading CollectionHeader bytes from file.")
 
         cdef size_t n_read = fread(&hdr.n_traces, sizeof(hdr.n_traces), 1, fd)
         if n_read != 1:
@@ -223,9 +220,6 @@ cdef class CollectionHeader:
         return hdr
 
     cdef to_file_descriptor(self, FILE * fd):
-        # cdef int n_write = fwrite(&self.n_traces, type(self).get_cstruct_byte_size(), 1, fd)
-        # if n_write != 1:
-        #     raise IOError("Error writing CollectionHeader to file.")
 
         cdef size_t n_write = fwrite(&self.n_traces, sizeof(self.n_traces), 1, fd)
         if n_write != 1:
