@@ -1,0 +1,11 @@
+cdef enum SourceType:
+    unknown = 0
+    vib_vert = 1
+    vib_cross = 2
+    vib_inline = 3
+    imp_vert = 4
+    imp_cross = 5
+    imp_inline = 6
+    dist_vert = 8
+    dist_cross = 9
+    dist_inline = 10

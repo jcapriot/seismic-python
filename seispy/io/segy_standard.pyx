@@ -19,146 +19,15 @@ import numpy as np
 
 cdef:
     # Expected Sizes
-    size_t TXT_HDR_SIZE = 3200
-    size_t BIN_HDR_SIZE = 400
-    size_t TRC_HDR_SIZE = 240
-    size_t TAP_LBL_SIZE = 180
+    size_t BIN_HDR_SIZE = sizeof(binary_header)
+    size_t TRC_HDR_SIZE = sizeof(trace_header)
+    size_t EXT_HDR_SIZE = sizeof(extended_trace_header)
+    size_t SU_HDR_SIZE = sizeof(su_trace)
 
-    i2 UNKNOWN = 0
-
-    i4 BIG_ENDIAN = 0x01020304
-    i4 LITTLE_ENDIAN = 0x04030201
-    i4 PAIRWISE_BYTESWAP = 0x02010403
-
-    # data_format codes
-    i2 DAT_F32_IBM = 1
-    i2 DAT_I32 = 2
-    i2 DAT_I16 = 3
-    i2 DAT_F32_FGN = 4
-    i2 DAT_F32_I3E = 5
-    i2 DAT_F64_I3E = 6
-    i2 DAT_I24 = 7
-    i2 DAT_I08 = 8
-    i2 DAT_I64 = 9
-    i2 DAT_U32 = 10
-    i2 DAT_U16 = 11
-    i2 DAT_U64 = 12
-    i2 DAT_U24 = 15
-    i2 DAT_U08 = 16
-
-    # trace sorting codes
-    i2 SORT_NONE = 1
-    i2 SORT_CMN_DP_PT = 2
-    i2 SORT_SINGLE = 3
-    i2 SORT_HORIZ_STK = 4
-    # rev 1
-    i2 SORT_OTHER = -1
-    i2 SORT_CMN_SRC_PT = 5
-    i2 SORT_CMN_RX_PT = 6
-    i2 SORT_CMN_OFF_PT = 7
-    i2 SORT_CMN_MD_PT = 8
-    i2 SORT_CMN_CNV_PT = 9
-
-    # Sweep type code
-    ui2 SWP_LINEAR = 1
-    ui2 SWP_PARABOLIC = 2
-    ui2 SWP_EXP = 3
-    ui2 SWP_OTHER = 4
-    ui2 TPR_LINEAR = 1
-    ui2 TPR_COS = 2
-    ui2 TPR_OTHER = 3
-
-    i2 CORR_DATA_YES = 2
-    i2 CORR_DATA_NO = 1
-
-    i2 BIN_GAIN_YES = 1
-    i2 BIN_GAIN_NO = 2
-
-    i2 AMP_REC_NONE = 1
-    i2 AMP_REC_SPH = 2
-    i2 AMP_REC_AGC = 3
-    i2 AMP_REC_OTHER = 4
-
-    i2 MEASURE_METERS = 1
-    i2 MEASURE_FEET = 2
-
-    i2 POLARITY_UP_NEG = 1
-    i2 POLARITY_UP_POS = 2
-
-    i2 VIB_POL_338_023 = 1
-    i2 VIB_POL_023_068 = 2
-    i2 VIB_POL_067_113 = 3
-    i2 VIB_POL_113_158 = 4
-    i2 VIB_POL_158_203 = 5
-    i2 VIB_POL_203_248 = 6
-    i2 VIB_POL_248_293 = 7
-    i2 VIB_POL_293_338 = 8
-
-    #Time codes, rev 2
-    i2 TIME_LOCAL = 1
-    i2 TIME_GMT = 2
-    i2 TIME_OTHER = 3
-    i2 TIME_UTC = 4
-    i2 TIME_GPS = 5
-
-    # Survey Types, rev 2.1
-    i2 SRV_LAND = 1
-    i2 SRV_MARINE = 2
-    i2 SRV_TRANS = 3
-    i2 SRV_DWN_HOLE = 4
-    i2 SRV_1D= 8
-    i2 SRV_2D = 16
-    i2 SRV_3D = 24
-    i2 SRV_TIME_LAPSE = 32
-    i2 SRV_PARALLEL_LINES = 128
-    i2 SRV_CRS_SPREAD = 256
-    i2 SRV_PATCHES = 684
-    i2 SRV_TWD_STRMR = 1024
-    i2 SRV_OBS = 1152
-    i2 SRV_RAND = 1280
-
-    i2 TRC_ID_OTHER = -1
-    i2 TRC_ID_TIME_SEISMIC = 1
-    i2 TRC_ID_DEAD = 2
-    i2 TRC_ID_DUMMY = 3
-    i2 TRC_ID_TIMEBREAK = 4
-    i2 TRC_ID_UPHOLE = 5
-    i2 TRC_ID_SWEEP = 6
-    i2 TRC_ID_TIMING = 7
-    i2 TRC_ID_WATERBRK = 8
-    i2 TRC_ID_NEARGUNSIG = 9
-    i2 TRC_ID_FARGUNSIG = 10
-    i2 TRC_ID_PRESSURE = 11
-    i2 TRC_ID_VERT = 12
-    i2 TRC_ID_CROSS = 13
-    i2 TRC_ID_INLINE = 14
-    i2 TRC_ID_ROT_VERT = 15
-    i2 TRC_ID_ROT_TRANS = 16
-    i2 TRC_ID_ROT_RADIAL = 17
-    i2 TRC_ID_VIBEMASS = 18
-    i2 TRC_ID_VIBEBASE = 19
-    i2 TRC_ID_VIBEGFORCE = 20
-    i2 TRC_ID_VIBEREF = 21
-    i2 TRC_ID_TV_PAIR = 22
-    i2 TRC_ID_TD_PAIR = 23
-    i2 TRC_ID_DV_PAIR = 24
-    i2 TRC_ID_DEPTH_DOMAIN = 25
-    i2 TRC_ID_GRAV_POT = 26
-    i2 TRC_ID_EFIELD_VERT = 27
-    i2 TRC_ID_EFIELD_CROSS = 28
-    i2 TRC_ID_EFIELD_INLINE = 29
-    i2 TRC_ID_ROT_EFIELD_VERT = 30
-    i2 TRC_ID_ROT_EFIELD_TRANS = 31
-    i2 TRC_ID_ROT_EFIELD_RAD = 32
-    i2 TRC_ID_BFIELD_VERT = 33
-    i2 TRC_ID_BFIELD_CROSS = 34
-    i2 TRC_ID_BFIELD_INLINE = 35
-    i2 TRC_ID_ROT_BFIELD_VERT = 36
-    i2 TRC_ID_ROT_BFIELD_TRANS = 37
-    i2 TRC_ID_ROT_BFIELD_RAD = 38
-    i2 TRC_ID_PITCH = 39
-    i2 TRC_ID_YAW = 40
-    i2 TRC_ID_ROLL = 41
+    bint BH_IS_PACKED = BIN_HDR_SIZE == BIN_HDR_BYTES
+    bint STDH_IS_PACKED = TRC_HDR_SIZE == TRC_HDR_BYTES
+    bint EXTH_IS_PACKED = EXT_HDR_SIZE == TRC_HDR_BYTES
+    bint SUTH_IS_PACKED = SU_HDR_SIZE == TRC_HDR_BYTES
 
 
 
@@ -188,30 +57,18 @@ cdef:
 su_trace_header_dtype = np.asarray(<su_trace[:1]> &tmp_su_hdr).dtype
 _su_info  = spy_io.struct_dtype_info(su_trace_header_dtype)
 
-cdef:
-    unocal_trace tmp_unocal_hdr
-    size_t[:,::1] _unc_info
-unocal_trace_header_dtype = np.asarray(<unocal_trace[:1]> &tmp_unocal_hdr).dtype
-_unc_info  = spy_io.struct_dtype_info(unocal_trace_header_dtype)
-
-cdef:
-    bint BH_IS_PACKED = sizeof(binary_header) == BIN_HDR_SIZE
-    bint STDH_IS_PACKED = sizeof(trace_header) == TRC_HDR_SIZE
-    bint EXTH_IS_PACKED = sizeof(extended_trace_header) == TRC_HDR_SIZE
-    bint SUTH_IS_PACKED = sizeof(su_trace) == TRC_HDR_SIZE
-    bint UCLH_IS_PACKED = sizeof(unocal_trace) == TRC_HDR_SIZE
 
 def trace_label_size():
-    return TAP_LBL_SIZE
+    return TAP_LBL_BYTES
 
 def text_header_size():
-    return TXT_HDR_SIZE
+    return TXT_HDR_BYTES
 
 def binary_header_size():
-    return BIN_HDR_SIZE
+    return BIN_HDR_BYTES
 
 def trace_header_size():
-    return TRC_HDR_SIZE
+    return TRC_HDR_BYTES
 
 def get_sizes_and_offsets(name):
     if name == 'binary_header':
@@ -300,19 +157,13 @@ cdef class SEGYTrace:
     cdef spyc.Trace to_spy_trace(self):
         cdef:
             spyc.Trace spy_tr = spyc.Trace.__new__(spyc.Trace)
-            spyc.spy_trace *tr = spyc.new_trace(0)
-        if tr is NULL:
-            raise MemoryError('Unable to allocate trace.')
+            spyc.spy_trace_header *spy_hdr = spyc.new_hdr()
 
-        spy_tr.tr = tr
+        spy_tr.hdr = spy_hdr
 
-        spy_tr.trace_owner = True
-        spy_tr.trace_data_owner = False
-        spy_tr.trace_data = self.data
+        spy_tr.header_owner = True
 
-        cdef spyc.spy_trace_header *spy_hdr = &tr.hdr
-
-        tr.data = &self.data[0]
+        spy_tr.data = self.data
         spy_hdr.n_sample = self.data.shape[0]
 
         with nogil:
@@ -398,11 +249,12 @@ cdef class SEGYTrace:
 
 
 _SEGY_SORT_SPY_SORT = {
-    spyc.SPY_UNKNOWN : SORT_NONE,
-    spyc.SPY_TX_GATHER : SORT_CMN_SRC_PT,
-    spyc.SPY_RX_GATHER : SORT_CMN_RX_PT,
-    spyc.SPY_COMMON_MIDPOINT : SORT_CMN_MD_PT,
-    spyc.SPY_COMMON_OFFSET : SORT_CMN_OFF_PT
+    spyc.EnsembleType.unknown : TraceSorting.unknown,
+    spyc.EnsembleType.unsorted : TraceSorting.none,
+    spyc.EnsembleType.tx_gather : TraceSorting.source,
+    spyc.EnsembleType.rx_gather : TraceSorting.receiver,
+    spyc.EnsembleType.common_midpoint : TraceSorting.midpoint,
+    spyc.EnsembleType.common_offset : TraceSorting.offset,
 }
 
 cdef class SEGYCollectionHeader:
@@ -416,8 +268,8 @@ cdef class SEGYCollectionHeader:
             binary_header *hdr = &segy.hdr
 
         hdr.meters_or_feet = 1
-        hdr.data_format = DAT_F32_I3E
-        hdr.byte_order_id = 16909060
+        hdr.data_format = DataFormat.float32_ieee
+        hdr.byte_order_id = EndianKey.system
         hdr.major_rev = 2
         hdr.minor_rev = 1
         hdr.nmax_ext_trc_hdr = 1

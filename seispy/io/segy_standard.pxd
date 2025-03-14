@@ -10,155 +10,29 @@ from ..config cimport (
     float64_t as f8,
 )
 
+from ._segy_enums cimport *
+
+cdef extern from *:
+    """
+    #define SEGY_UNKNOWN 0
+    #define TXT_HDR_BYTES 3200
+    #define BIN_HDR_BYTES 400
+    #define TRC_HDR_BYTES 240
+    #define TAP_LBL_BYTES 180
+    """
+    int SEGY_UNKNOWN
+    int TXT_HDR_BYTES
+    int BIN_HDR_BYTES
+    int TRC_HDR_BYTES
+    int TAP_LBL_BYTES
+
 # constants to be defined in segy_standard.pyx
 cdef:
     # Expected Sizes
-    size_t TXT_HDR_SIZE
     size_t BIN_HDR_SIZE
     size_t TRC_HDR_SIZE
-
-    i2 UNKNOWN
-
-    # data_format codes
-    i2 DAT_F32_IBM
-    i2 DAT_I32
-    i2 DAT_I16
-    i2 DAT_F32_FGN
-    # rev 1
-    i2 DAT_F32_I3E
-    i2 DAT_F64_I3E
-    i2 DAT_I24
-    i2 DAT_I08
-    # rev 2
-    i2 DAT_I64
-    i2 DAT_U32
-    i2 DAT_U16
-    i2 DAT_U64
-    i2 DAT_U24
-    i2 DAT_U08
-
-    # trace sorting codes
-    i2 SORT_NONE
-    i2 SORT_CMN_DP_PT
-    i2 SORT_SINGLE
-    i2 SORT_HORIZ_STK
-    # rev 1
-    i2 SORT_OTHER
-    i2 SORT_CMN_SRC_PT
-    i2 SORT_CMN_RX_PT
-    i2 SORT_CMN_OFF_PT
-    i2 SORT_CMN_MD_PT
-    i2 SORT_CMN_CNV_PT
-
-    # Sweep type code
-    ui2 SWP_LINEAR
-    ui2 SWP_PARABOLIC
-    ui2 SWP_EXP
-    ui2 SWP_OTHER
-    ui2 TPR_LINEAR
-    ui2 TPR_COS
-    ui2 TPR_OTHER
-
-    i2 CORR_DATA_YES
-    i2 CORR_DATA_NO
-
-    i2 BIN_GAIN_YES
-    i2 BIN_GAIN_NO
-
-    i2 AMP_REC_NONE
-    i2 AMP_REC_SPH
-    i2 AMP_REC_AGC
-    i2 AMP_REC_OTHER
-
-    i2 MEASURE_METERS
-    i2 MEASURE_FEET
-
-    i2 POLARITY_UP_NEG
-    i2 POLARITY_UP_POS
-
-    i2 VIB_POL_338_023
-    i2 VIB_POL_023_068
-    i2 VIB_POL_067_113
-    i2 VIB_POL_113_158
-    i2 VIB_POL_158_203
-    i2 VIB_POL_203_248
-    i2 VIB_POL_248_293
-    i2 VIB_POL_293_338
-
-    i4 ENDIAN_CORRECT
-    i4 ENDIAN_REV
-    i4 ENDIAN_PAIR_SWAP
-
-    #Time codes, rev 2
-    i2 TIME_LOCAL
-    i2 TIME_GMT
-    i2 TIME_OTHER
-    i2 TIME_UTC
-    i2 TIME_GPS
-
-    # Survey Types, rev 2.1
-    i2 SRV_LAND
-    i2 SRV_MARINE
-    i2 SRV_TRANS
-    i2 SRV_DWN_HOLE
-    i2 SRV_1D
-    i2 SRV_2D
-    i2 SRV_3D
-    i2 SRV_TIME_LAPSE
-    i2 SRV_PARALLEL_LINES
-    i2 SRV_CRS_SPREAD
-    i2 SRV_PATCHES
-    i2 SRV_TWD_STRMR
-    i2 SRV_OBS
-    i2 SRV_RAND
-
-    i2 TRC_ID_OTHER
-    i2 TRC_ID_TIME_SEISMIC
-    i2 TRC_ID_DEAD
-    i2 TRC_ID_DUMMY
-    i2 TRC_ID_TIMEBREAK
-    i2 TRC_ID_UPHOLE
-    i2 TRC_ID_SWEEP
-    i2 TRC_ID_TIMING
-    i2 TRC_ID_WATERBRK
-    i2 TRC_ID_NEARGUNSIG
-    i2 TRC_ID_FARGUNSIG
-    i2 TRC_ID_PRESSURE
-    i2 TRC_ID_VERT
-    i2 TRC_ID_CROSS
-    i2 TRC_ID_INLINE
-    i2 TRC_ID_ROT_VERT
-    i2 TRC_ID_ROT_TRANS
-    i2 TRC_ID_ROT_RADIAL
-    i2 TRC_ID_VIBEMASS
-    i2 TRC_ID_VIBEBASE
-    i2 TRC_ID_VIBEGFORCE
-    i2 TRC_ID_VIBEREF
-    i2 TRC_ID_TV_PAIR
-    i2 TRC_ID_TD_PAIR
-    i2 TRC_ID_DV_PAIR
-    i2 TRC_ID_DEPTH_DOMAIN
-    i2 TRC_ID_GRAV_POT
-    i2 TRC_ID_EFIELD_VERT
-    i2 TRC_ID_EFIELD_CROSS
-    i2 TRC_ID_EFIELD_INLINE
-    i2 TRC_ID_ROT_EFIELD_VERT
-    i2 TRC_ID_ROT_EFIELD_TRANS
-    i2 TRC_ID_ROT_EFIELD_RAD
-    i2 TRC_ID_BFIELD_VERT
-    i2 TRC_ID_BFIELD_CROSS
-    i2 TRC_ID_BFIELD_INLINE
-    i2 TRC_ID_ROT_BFIELD_VERT
-    i2 TRC_ID_ROT_BFIELD_TRANS
-    i2 TRC_ID_ROT_BFIELD_RAD
-    i2 TRC_ID_PITCH
-    i2 TRC_ID_YAW
-    i2 TRC_ID_ROLL
-
-    i2 TRC_PRODUCTION_DATA
-    i2 TRC_TEST_DATA
-    i2 TRC_GAIN_TYPE
-
+    size_t EXT_HDR_SIZE
+    size_t SU_HDR_SIZE
 
 cdef struct binary_header:
     i4 job_id
@@ -420,91 +294,3 @@ cdef struct su_trace:
     short mark
     short shortpad
     short unass[14]
-
-cdef struct unocal_trace:
-    int tracl
-    int tracr
-    int fldr
-    int tracf
-    int ep
-    int cdp
-    int cdpt
-    short trid
-    short nvs
-    short nhs
-    short duse
-    int offset
-    int gelev
-    int selev
-    int sdepth
-    int gdel
-    int sdel
-    int swdep
-    int gwdep
-    short scalel
-    short scalco
-    int  sx
-    int  sy
-    int  gx
-    int  gy
-    short counit
-    short wevel
-    short swevel
-    short sut
-    short gut
-    short sstat
-    short gstat
-    short tstat
-    short laga
-    short lagb
-    short delrt
-    short muts
-    short mute
-    unsigned short ns
-    unsigned short dt
-    short gain
-    short igc
-    short igi
-    short corr
-    short sfs
-    short sfe
-    short slen
-    short styp
-    short stas
-    short stae
-    short tatyp
-    short afilf
-    short afils
-    short nofilf
-    short nofils
-    short lcf
-    short hcf
-    short lcs
-    short hcs
-    short year
-    short day
-    short hour
-    short minute
-    short sec
-    short timbas
-    short trwf
-    short grnors
-    short grnofr
-    short grnlof
-    short gaps
-    short otrav
-    # SU Specifics
-    float d1
-    float f1
-    float d2
-    float f2
-    float ungpow
-    float unscale
-    # Unocal Specifics
-    short mark
-    short mutb
-    float dz
-    float fz
-    short n2
-    int ntr
-    short unass[8]

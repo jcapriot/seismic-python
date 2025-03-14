@@ -36,6 +36,7 @@ cdef class spike(spyc.BaseTraceIterator):
         if self.i == self.hdr.n_traces:
             raise StopIteration()
         cdef float[::1] data = <float[:self.nt]> malloc(sizeof(float) * self.nt)
+        data[:] = 0.0
         for spike in self.spikes:
             if spike[0] == self.i:
                 data[spike[1]] = 1.0

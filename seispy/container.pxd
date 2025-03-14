@@ -1,6 +1,13 @@
 from libc.stdio cimport FILE
 from .io cimport spy_off_t
 cimport cython
+from ._cy_enums cimport EnsembleType, SamplingDomain, SamplingUnit
+
+cdef extern from *:
+    """
+    #define SPY_UNKNOWN 0
+    """
+    int SPY_UNKNOWN
 
 cdef:
     struct spy_trace_header:
@@ -20,23 +27,8 @@ cdef:
 
     size_t SPY_TRC_HDR_SIZE
 
-    enum SamplingUnit:
-        seconds
-        meters
-
-    enum SamplingDomain:
-        unit
-        fourier
-
-    enum EnsembleType:
-        unknown
-        tx_gather
-        rx_gather
-        common_midpoint
-        common_offset
-
-    spy_trace_header* new_hdr(size_t n_sample=?) nogil
-    spy_trace_header* copy_of_hdr(spy_trace_header *hdr_in) nogil
+cdef spy_trace_header* new_hdr(size_t n_sample=?) nogil
+cdef spy_trace_header* copy_of_hdr(spy_trace_header *hdr_in) nogil
 
 @cython.final
 cdef class Trace:

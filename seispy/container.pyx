@@ -21,7 +21,7 @@ cdef spy_trace_header* new_hdr(size_t n_sample=0) nogil:
     if hdr is NULL:
         with gil:
             raise MemoryError("Unable to allocate a new seispy trace header.")
-    memset(hdr, 0, SPY_TRC_HDR_SIZE)
+    memset(hdr, SPY_UNKNOWN, SPY_TRC_HDR_SIZE)
     hdr.n_sample = n_sample
     return hdr
 

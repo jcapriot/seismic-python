@@ -1,0 +1,17 @@
+cdef enum DataFormat:
+    float64_ibm = 1
+    int32 = 2
+    int16 = 3
+    fixed32 = 4
+    # rev 1
+    float32_ieee = 5
+    float64_ieee = 6
+    int24 = 7
+    int08 = 8
+    # rev 2
+    int64 = 9
+    uint32 = 10
+    uint16 = 11
+    uint64 = 12
+    uint24 = 15
+    uint08 = 16

@@ -79,6 +79,7 @@ cdef class plane(spyc.BaseTraceIterator):
 
 
         cdef float[::1] data = <float[:self.nt]> malloc(sizeof(float) * self.nt)
+        data[:] = 0.0
 
         for i in range(self.n_planes):
             tfe = self.tfes[i]
