@@ -13,6 +13,7 @@ from libc.stdint cimport (
 )
 from libc.stdio cimport fwrite, fread, FILE, SEEK_CUR, feof
 from libc.stdlib cimport malloc
+from pandas.io.formats.format import DataFrameFormatter
 
 from . cimport byteswapping as bswap
 from . cimport _io as spy_io
@@ -128,6 +129,7 @@ cpdef void ibm_to_float(uint8_t[::1] inp) noexcept nogil:
                 else:
                     _in[i] = sign
 
+
 cpdef void int32_to_float(uint8_t[::1] inp) noexcept nogil:
     cdef:
         size_t n_bytes = inp.shape[0]
@@ -143,6 +145,85 @@ cpdef void int32_to_float(uint8_t[::1] inp) noexcept nogil:
             holder = <float> _in[i]
             hld_ptr = <int32_t *> &holder
             _in[i] = hld_ptr[0]
+
+
+ctypedef fused convertible4:
+    ui4
+    i4
+    f4
+
+cdef void convert4_to_float(convertible4 *inp, size_t n_items) noexcept nogil:
+    cdef:
+        size_t i
+        float holder
+        convertible4 *hld_ptr
+
+    if convertible4 is not float:
+        with nogil:
+            for i in range(n_items):
+                holder = <float> inp[i]
+                hld_ptr = <convertible4 *> &holder
+                inp[i] = hld_ptr[0]
+
+ctypedef fused convertibleX:
+    ui1
+    i1
+    ui2
+    i2
+    ui8
+    i8
+    f8
+
+cdef float *convert_to_float(convertibleX *inp, size_t n_items) noexcept nogil:
+    cdef:
+        size_t i
+        float * out
+
+    out = <float *> malloc(sizeof(float) * n_items)
+
+    with nogil:
+        for i in range(n_items):
+            out[i] = <float> inp[i]
+
+    return out
+
+
+cdef void unpack3bytes_to_4(uint8_t[::1] inp, str endian_flag, bint signed) nogil:
+    cdef:
+        size_t i, i4, i3
+        size_t n_bytes = inp.shape[0]
+        size_t n_items = n_bytes // 4
+
+    with nogil:
+        if endian_flag == ">":
+            # pad to 4 bytes by inserting a (signed) 0 before
+            # (it is big endian after all)
+            for i in range(n_items - 1, -1, -1):
+                i4 = i * 4
+                i3 = i * 3
+                inp[i4 + 3] = inp[i3 + 2]
+                inp[i4 + 2] = inp[i3 + 1]
+                inp[i4 + 1] = inp[i3    ]
+                # if it was a signed value and it was negative
+                # meaning the first bit of the MSB was a 1
+                # insert 1111
+                if signed and inp[i4 + 1] & 1 == 1:
+                    inp[i4] = 0xFF
+                else:
+                    inp[i4    ] = 0
+        elif endian_flag == "<":
+            # pad to 4 bytes by appending a (signed) 0
+            for i in range(n_items - 1, -1, -1):
+                i4 = i * 4
+                i3 = i * 3
+                # same as above for properly accounting for sign
+                if signed and inp[i3 + 2] & 1 == 1:
+                    inp[i4 + 3] = 0xFF
+                else:
+                    inp[i4 + 3] = 0
+                inp[i4 + 2] = inp[i3 + 2]
+                inp[i4 + 1] = inp[i3 + 1]
+                inp[i4    ] = inp[i3    ]
 
 def trace_label_size():
     return TAP_LBL_BYTES
@@ -365,7 +446,12 @@ cdef class SEGYTrace:
 
         cdef size_t n_data_bytes = data_item_size * nsamps
 
-        cdef uint8_t[::1] data_bytes = <uint8_t[:n_data_bytes]> malloc(n_data_bytes)
+        cdef uint8_t[::1] data_bytes
+
+        if data_item_size == 3:
+            data_bytes = <uint8_t[:4]> malloc(nsamps * 4)
+        else:
+            data_bytes = <uint8_t[:n_data_bytes]> malloc(n_data_bytes)
 
         #tr.data = <float[:nsamps]> malloc(sizeof(float) * nsamps)
         n_read = fread(&data_bytes[0], 1, n_data_bytes, fd)
@@ -374,6 +460,13 @@ cdef class SEGYTrace:
                 raise EOFError("Reached the end of the file while reading data.")
             else:
                 raise IOError("Error reading trace data from file.")
+        if data_item_size == 3:
+            if file_endian_flag == "<>":
+                raise NotImplementedError("Reading pairwise byteswapped 3 byte values is not a defined behavoir.")
+            unpack3bytes_to_4(data_bytes, file_endian_flag, data_type==DataFormat.int24)
+            # now it's the corresponding 4 byte size.
+            data_item_size = 4
+            data_type = DataFormat.int32 if data_type == DataFormat.int24 else DataFormat.uint32
         if data_item_size == 1:
             pass
         elif file_endian_flag == ">":
@@ -404,16 +497,36 @@ cdef class SEGYTrace:
             else:
                 raise NotImplementedError
 
-        if data_type == DataFormat.float32_ibm:
-            ibm_to_float(data_bytes)
-        elif data_type == DataFormat.int32:
-            int32_to_float(data_bytes)
-
-        tr.data = <f4[:nsamps]> <f4 *> &data_bytes[0]
-
-        # bswap.swap_endian_and_system_array(tr.data, file_endian_flag, inplace=True)
+        if data_item_size == sizeof(float):
+            # we already allocated the memory we need, so just transform it in place
+            if data_type == DataFormat.float32_ibm:
+                ibm_to_float(data_bytes)
+            elif data_type == DataFormat.int32:
+                convert4_to_float(<i4 *> &data_bytes[0], nsamps)
+            elif data_type == DataFormat.uint32:
+                convert4_to_float(<ui4 *> &data_bytes[0], nsamps)
+            elif data_type == DataFormat.float32_ieee:
+                pass # nothing needs to be done...
+            tr.data = <float[:nsamps]> <float *> &data_bytes[0]
+        else:
+            # need to create a new array and copy it into it,
+            # as the bytes array does not have the same space
+            # as an array of floats...
+            if data_type == DataFormat.int16:
+                tr.data = <float[:nsamps]> convert_to_float(<i2 *> &data_bytes[0], nsamps)
+            elif data_type == DataFormat.float64_ieee:
+                tr.data = <float[:nsamps]> convert_to_float(<f8 *> &data_bytes[0], nsamps)
+            elif data_type == DataFormat.int08:
+                tr.data = <float[:nsamps]> convert_to_float(<i1 *> &data_bytes[0], nsamps)
+            elif data_type == DataFormat.int64:
+                tr.data = <float[:nsamps]> convert_to_float(<i8 *> &data_bytes[0], nsamps)
+            elif data_type == DataFormat.uint16:
+                tr.data = <float[:nsamps]> convert_to_float(<ui2 *> &data_bytes[0], nsamps)
+            elif data_type == DataFormat.uint64:
+                tr.data = <float[:nsamps]> convert_to_float(<ui8 *> &data_bytes[0], nsamps)
+            elif data_type == DataFormat.uint08:
+                tr.data = <float[:nsamps]> convert_to_float(<ui1 *> &data_bytes[0], nsamps)
         return tr
-
 
 _SEGY_SORT_SPY_SORT = {
     spyc.EnsembleType.unknown : TraceSorting.unknown,

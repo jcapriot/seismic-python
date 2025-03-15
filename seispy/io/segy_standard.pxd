@@ -3,6 +3,7 @@ from ..config cimport (
     uint16_t as ui2,
     uint32_t as ui4,
     uint64_t as ui8,
+    int8_t as i1,
     int16_t as i2,
     int32_t as i4,
     int64_t as i8,
