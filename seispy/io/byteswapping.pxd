@@ -50,3 +50,5 @@ ctypedef fused swappable:
 
 cpdef swappable swap_endian_and_system(swappable x, str endian=?)
 cpdef swappable[::1] swap_endian_and_system_array(swappable[::1] x, str endian=?, bint inplace=?)
+
+cdef void swap_struct_endian_and_system(void *x, size_t[:, ::1] struct_info, str endian=?)

@@ -98,6 +98,10 @@ cdef class Trace:
     def d_sample(self):
         return self.hdr.d_sample
 
+    @property
+    def header(self):
+        return self.hdr[0]
+
     @staticmethod
     cdef Trace from_trace(spy_trace_header *hdr, float[::1] data, bint hdr_owner=False):
         cdef Trace tr = Trace.__new__(Trace)
@@ -297,12 +301,7 @@ cdef class TraceCollection:
     @classmethod
     def from_file(cls, filename):
         cdef:
-            Trace trace
             CollectionHeader hdr
-            FILE *fd
-            bint file_owner
-            spy_off_t orig_pos = 0
-            size_t ntr = 0
 
         if hasattr(filename, 'read'):
             ctx = nullcontext(filename)
@@ -310,7 +309,7 @@ cdef class TraceCollection:
             ctx = open(os.fspath(filename), "rb")
 
         with ctx as f:
-            bts = f.read()
+            bts = f.read(n=CollectionHeader.get_cstruct_byte_size())
             hdr = CollectionHeader.from_bytes(bts)
 
         cdef TraceCollection new_segy = TraceCollection.__new__(TraceCollection)

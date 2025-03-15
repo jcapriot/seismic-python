@@ -110,7 +110,7 @@ cdef void copy_struct_to_char(
     size_t[:, ::1] struct_info,
     bint is_packed,
     size_t expected_size,
-    char *out_chrs
+    unsigned char *out_chrs
 ) noexcept nogil
 
 cdef void copy_struct_from_char(
@@ -118,7 +118,7 @@ cdef void copy_struct_from_char(
     size_t[:, ::1] struct_info,
     bint is_packed,
     size_t expected_size,
-    char *in_chrs
+    unsigned char *in_chrs
 ) noexcept nogil
 
 cpdef size_t[:,::1] struct_dtype_info(object struct_dtype)

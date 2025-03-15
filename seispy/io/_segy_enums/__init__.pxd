@@ -5,7 +5,6 @@ from .correlated cimport Correlated
 from .data_format cimport DataFormat
 from .data_unit cimport DataUnit
 from .data_use cimport DataUse
-from .endian_key cimport EndianKey
 from .gain_type cimport GainType
 from .last_id cimport LastID
 from .measurement_unit cimport MeasurementUnit

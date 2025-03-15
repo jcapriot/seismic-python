@@ -182,11 +182,11 @@ cdef void copy_struct_to_char(
     size_t[:, ::1] struct_info,
     bint is_packed,
     size_t expected_size,
-    char *out_chrs
+    unsigned char *out_chrs
 ) noexcept nogil:
     cdef:
         size_t i, j
-        char * st = <char *> in_struct
+        unsigned char * st = <unsigned char *> in_struct
         size_t[::1] offsets = struct_info[0]
         size_t[::1] sizes = struct_info[1]
         size_t[::1] n_elements = struct_info[2]
@@ -206,18 +206,18 @@ cdef void copy_struct_from_char(
     size_t[:, ::1] struct_info,
     bint is_packed,
     size_t expected_size,
-    char *in_chrs
+    unsigned char *in_chrs
 ) noexcept nogil:
     cdef:
         size_t i, j
-        char * st = <char *> out_struct
+        unsigned char * st = <unsigned char *> out_struct
         size_t[::1] offsets = struct_info[0]
         size_t[::1] sizes = struct_info[1]
         size_t[::1] n_elements = struct_info[2]
         size_t n_attr = offsets.shape[1]
 
     if is_packed:
-        memcpy(out_struct, st, expected_size)
+        memcpy(st, in_chrs, expected_size)
     else:
         for i in range(n_attr):
             for j in range(offsets[i], offsets[i] + n_elements[i] * sizes[i]):

@@ -16,7 +16,8 @@ def wiggle(data, ax=None, color='k'):
         dt = trace.d_sample
         y_max = max(y_max, dt * (n1 - 1))
         if dt == 0:
-            warnings.warn("trace has a 0 sample spacing.")
+            warnings.warn("trace has a 0 sample spacing, setting to 4ms")
+            dt = 0.004
         s_locs = np.linspace(0, n1*dt, n1, endpoint=False)
         dat = np.asarray(trace)
 
@@ -35,7 +36,7 @@ def image(data, ax=None, cmap='seismic', **kwargs):
         ax = plt.gca()
         ax.invert_yaxis()
 
-    im_dat = np.array([trace for trace in data])
+    im_dat = np.array([trace for trace in data]).T
     if 'clim' not in kwargs or 'vmin' not in kwargs or 'vmax' not in kwargs:
         max_v = np.abs(im_dat).max()
         if 'vmin' not in kwargs:

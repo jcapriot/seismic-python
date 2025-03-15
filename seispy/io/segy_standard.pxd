@@ -12,6 +12,9 @@ from ..config cimport (
 
 from ._segy_enums cimport *
 
+cdef extern from "spy_config.h":
+    pass
+
 cdef extern from *:
     """
     #define SEGY_UNKNOWN 0
@@ -19,12 +22,32 @@ cdef extern from *:
     #define BIN_HDR_BYTES 400
     #define TRC_HDR_BYTES 240
     #define TAP_LBL_BYTES 180
+
+    #ifdef IS_BIG_ENDIAN
+
+    #define SEGY_BIG_ENDIAN_FLAG 0x01020304
+    #define SEGY_LITTLE_ENDIAN_FLAG 0x04030201
+    #define SEGY_PAIRWISE_ENDIAN_FLAG 0x02010403
+
+    #elif defined(IS_LITTLE_ENDIAN)
+
+    #define SEGY_BIG_ENDIAN_FLAG 0x04030201
+    #define SEGY_LITTLE_ENDIAN_FLAG 0x01020304
+    #define SEGY_PAIRWISE_ENDIAN_FLAG 0x03040102
+
+    #endif
+    #define SEGY_SYSTEM_ENDIAN_FLAG 16909060
     """
     int SEGY_UNKNOWN
     int TXT_HDR_BYTES
     int BIN_HDR_BYTES
     int TRC_HDR_BYTES
     int TAP_LBL_BYTES
+
+    int SEGY_BIG_ENDIAN_FLAG
+    int SEGY_LITTLE_ENDIAN_FLAG
+    int SEGY_PAIRWISE_ENDIAN_FLAG
+    int SEGY_SYSTEM_ENDIAN_FLAG
 
 # constants to be defined in segy_standard.pyx
 cdef:
@@ -76,7 +99,7 @@ cdef struct binary_header:
     ui1 major_rev
     ui1 minor_rev
     ui2 is_fixed_traces
-    ui2 next_txt_hdr
+    i2 next_txt_hdr
     # rev 2 (up to unassigned_2)
     ui2 nmax_ext_trc_hdr # rev 2.1 (In rev1 this is a ui4, and there is no survey type
     i2 survey_type # rev 2.1

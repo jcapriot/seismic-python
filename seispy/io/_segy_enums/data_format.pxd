@@ -1,5 +1,5 @@
 cdef enum DataFormat:
-    float64_ibm = 1
+    float32_ibm = 1
     int32 = 2
     int16 = 3
     fixed32 = 4
