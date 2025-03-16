@@ -13,7 +13,7 @@ from libc.stdint cimport (
 )
 from libc.stdio cimport fwrite, fread, FILE, SEEK_CUR, feof
 from libc.stdlib cimport malloc
-from pandas.io.formats.format import DataFrameFormatter
+cimport cython
 
 from . cimport byteswapping as bswap
 from . cimport _io as spy_io
@@ -81,6 +81,7 @@ cdef:
         DataFormat.uint08 : 1,
     }
 
+@cython.boundscheck(False)
 cpdef void ibm_to_float(uint8_t[::1] inp) noexcept nogil:
     cdef:
         size_t n_bytes = inp.shape[0]
@@ -130,29 +131,13 @@ cpdef void ibm_to_float(uint8_t[::1] inp) noexcept nogil:
                     _in[i] = sign
 
 
-cpdef void int32_to_float(uint8_t[::1] inp) noexcept nogil:
-    cdef:
-        size_t n_bytes = inp.shape[0]
-        size_t n_items = n_bytes // 4
-        size_t i
-        float holder
-        int32_t *hld_ptr
-        # reinterpret it as a 4 byte integer:
-        int32_t *_in = <int32_t *> &inp[0]
-
-    with nogil:
-        for i in range(n_items):
-            holder = <float> _in[i]
-            hld_ptr = <int32_t *> &holder
-            _in[i] = hld_ptr[0]
-
-
 ctypedef fused convertible4:
     ui4
     i4
     f4
 
-cdef void convert4_to_float(convertible4 *inp, size_t n_items) noexcept nogil:
+@cython.boundscheck(False)
+cdef int convert4_to_float(convertible4 *inp, size_t n_items) noexcept nogil:
     cdef:
         size_t i
         float holder
@@ -174,6 +159,7 @@ ctypedef fused convertibleX:
     i8
     f8
 
+@cython.boundscheck(False)
 cdef float *convert_to_float(convertibleX *inp, size_t n_items) noexcept nogil:
     cdef:
         size_t i
@@ -188,7 +174,8 @@ cdef float *convert_to_float(convertibleX *inp, size_t n_items) noexcept nogil:
     return out
 
 
-cdef void unpack3bytes_to_4(uint8_t[::1] inp, str endian_flag, bint signed) nogil:
+@cython.boundscheck(False)
+cdef void unpack3bytes_to_4(uint8_t[::1] inp, str endian_flag, bint signed) noexcept nogil:
     cdef:
         size_t i, i4, i3
         size_t n_bytes = inp.shape[0]
