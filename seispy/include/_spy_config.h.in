@@ -29,6 +29,14 @@ typedef uint64_t spy_uint64;
 //     typedef long double spy_longdouble;
 // #endif
 
+#ifdef IS_BIG_ENDIAN
+#define SPY_SYS_ENDIAN 0
+#elif defined(IS_LITTLE_ENDIAN)
+#define SPY_SYS_ENDIAN 1
+#else
+#define SPY_SYS_ENDIAN 2
+#endif
+
 
 #if SPY_SIZEOF_FLOAT == 4
     #ifndef SPY_FLOAT32

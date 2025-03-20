@@ -1,5 +1,6 @@
 
 cdef extern from "spy_config.h":
+    int SPY_SYS_ENDIAN
     ctypedef float          spy_float32
     ctypedef double         spy_float64
 

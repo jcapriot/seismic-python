@@ -1,5 +1,4 @@
 cimport cython
-from Cython.Shadow import struct
 from libc.stdlib cimport malloc
 
 cpdef swappable swap_endian_and_system(swappable x, str endian='>'):

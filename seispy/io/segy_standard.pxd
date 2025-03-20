@@ -107,7 +107,7 @@ cdef struct binary_header:
     i2 time_basis
     ui8 n_traces
     ui8 first_trace_byte_offset
-    ui4 n_trailer_stanzas
+    i4 n_trailer_stanzas
     char[68] unassigned_2
 
 
