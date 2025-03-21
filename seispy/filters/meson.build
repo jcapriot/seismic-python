@@ -11,7 +11,7 @@ py.extension_module(
     c_args: cython_c_args,
     install: true,
     subdir: module_path,
-    dependencies : [py_dep, su_filter_dep, np_dep],
+    dependencies : [py_dep, su_dep],
 )
 
 py.install_sources(

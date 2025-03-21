@@ -1,27 +1,14 @@
 # cython: embedsignature=True, language_level=3
 # cython: linetrace=True
-
-from ..container cimport (
-    Trace, TraceCollection, BaseTraceIterator, new_trace,
-    spy_trace, SPY_COMMON_MIDPOINT, SPY_TX_GATHER, spy_trace_header
-)
-from ..cwp cimport mkhdiff
-from ..par cimport Reflector, Wavelet, breakReflectors, makeref, makericker
+from .. cimport container as spyc
+from .. cimport su
 import numpy as np
 from libc.stdlib cimport malloc, free
 from libc.float cimport FLT_MAX
 from libc.math cimport sqrtf, fabs
 cimport cython
 
-cdef extern from "synthetics.h" nogil:
-    void susynlv_filltrace(
-            spy_trace *trace, float v00, float dvdx, float dvdz,
-            int ls, int er, int ob,
-            Wavelet *w, int nr, Reflector *r,
-            int lhd, int nhd, float *hd
-    )
-
-cdef class synlv(BaseTraceIterator):
+cdef class synlv(spyc.BaseTraceIterator):
     cdef:
         bint shots, ls, er, ob
         int ns, nr, nxo, nt
@@ -34,8 +21,8 @@ cdef class synlv(BaseTraceIterator):
         int ixsm, ixo, tracl
         int lhd, nhd
 
-        Wavelet *w
-        Reflector *r
+        su.Wavelet *w
+        su.Reflector *r
         float *hd_filt
 
     def __dealloc__(self):
@@ -102,7 +89,6 @@ cdef class synlv(BaseTraceIterator):
         else:
             self.xo = np.require(xo, dtype=np.float32, flags='C')
         self.nxo = self.xo.shape[0]
-        self.n_traces = self.nxo * self.ns
 
         self.ref_points = np.empty(self.ns, dtype=np.float32)
         if self.shots:
@@ -135,7 +121,7 @@ cdef class synlv(BaseTraceIterator):
                 xr[ir][i_s] = x
                 zr[ir][i_s] = z
         if not smooth:
-            breakReflectors(&self.nr, &ar, &nxz, &xr, &zr)
+            su.breakReflectors(&self.nr, &ar, &nxz, &xr, &zr)
 
         self.dvdx = dvdx
         self.dvdz = dvdz
@@ -162,15 +148,22 @@ cdef class synlv(BaseTraceIterator):
 
         # will deallocate ar, nxz, xr, and zr
         # and allocate r
-        makeref(dsmax, self.nr, ar, nxz, xr, zr, &self.r)
+        su.makeref(dsmax, self.nr, ar, nxz, xr, zr, &self.r)
 
         # will allocate w
-        makericker(fpeak_c, dt, &self.w)
+        su.makericker(fpeak_c, dt, &self.w)
 
         #init iterators
         self.ixo = 0
         self.ixsm = 0
         self.tracl = 0
+
+        self.hdr.n_traces = self.nxo * self.ns
+        if self.shots:
+            self.hdr.ensemble_type = spyc.EnsembleType.tx_gather
+        else:
+            self.hdr.ensemble_type = spyc.EnsembleType.common_midpoint
+        self.hdr.uniform_traces = True
 
         # from susynlv.c:
         # LHD = 20
@@ -178,33 +171,44 @@ cdef class synlv(BaseTraceIterator):
         self.lhd = 20
         self.nhd = 1  +2 * self.lhd
         self.hd_filt = <float * > malloc(sizeof(float) * self.nhd)
-        mkhdiff(self.dt, self.lhd, self.hd_filt)
+        su.mkhdiff(self.dt, self.lhd, self.hd_filt)
 
     @cython.boundscheck(False)
-    cdef Trace next_trace(self):
+    cdef spyc.Trace next_trace(self):
         if self.ixsm == self.ns:
             raise StopIteration()
 
         # susynlv_filltrace will fill with zeros
         cdef:
-            spy_trace *tr = new_trace(self.nt, zero_fill=False)
-            spy_trace_header *hdr = &(tr.hdr)
+            # spy_trace *tr = new_hdr(self.nt, zero_fill=False)
+            # spy_trace_header *hdr = &(tr.hdr)
             float xs, xr, xo
-
-        hdr.line_id = 1
-        hdr.trace_id= self.tracl
-        hdr.d_sample = self.dt
-        hdr.sample_start = self.ft
+            float z = 0.0
 
         xs = self.ref_points[self.ixsm]
         xo = self.xo[self.ixo]
-        if self.shots:
-            hdr.ensemble_type = SPY_TX_GATHER
-        else:
+        if not self.shots:
             xs -= 0.5 * xo
-            hdr.ensemble_type = SPY_COMMON_MIDPOINT
 
         xr = xs + xo
+
+        cdef float[::1] data = <float[:self.nt]> malloc(self.nt * sizeof(float))
+        su.su_synlv(
+            &data[0],
+            xs, z, xr, z,
+            self.nt, self.dt, self.ft,
+            self.v00, self.dvdx, self.dvdz,
+            self.ls, self.er, self.ob,
+            self.w, self.nr, self.r,
+            self.lhd, self.nhd, self.hd_filt
+        )
+
+        cdef spyc.spy_trace_header * hdr = spyc.new_hdr(self.nt)
+
+        hdr.line_id = 1
+        hdr.trace_id = self.tracl
+        hdr.d_sample = self.dt
+        hdr.sample_start = self.ft
 
         hdr.tx_loc[0] = xs
         hdr.rx_loc[0] = xr
@@ -213,18 +217,10 @@ cdef class synlv(BaseTraceIterator):
         hdr.ensemble_number = 1 + self.ixsm
         hdr.ensemble_trace_number = 1 + self.ixo
 
-        susynlv_filltrace(
-            tr,
-            self.v00, self.dvdx, self.dvdz,
-            self.ls, self.er, self.ob,
-            self.w, self.nr, self.r,
-            self.lhd, self.nhd, self.hd_filt
-        )
-
         # post update iters
         self.ixo += 1
         self.tracl += 1
         if self.ixo == self.nxo:
             self.ixo = 0
             self.ixsm += 1
-        return Trace.from_trace(tr, True, True)
+        return spyc.Trace.from_trace(hdr, data,True)

@@ -1,165 +1,64 @@
-from libc.stdint cimport (
+from ..config cimport (
     uint8_t as ui1,
     uint16_t as ui2,
     uint32_t as ui4,
     uint64_t as ui8,
+    int8_t as i1,
     int16_t as i2,
     int32_t as i4,
     int64_t as i8,
+    float32_t as f4,
+    float64_t as f8,
 )
-from numpy cimport float64_t as r8
+
+from ._segy_enums cimport *
+
+cdef extern from "spy_config.h":
+    pass
+
+cdef extern from *:
+    """
+    #define SEGY_UNKNOWN 0
+    #define TXT_HDR_BYTES 3200
+    #define BIN_HDR_BYTES 400
+    #define TRC_HDR_BYTES 240
+    #define TAP_LBL_BYTES 180
+
+    #ifdef IS_BIG_ENDIAN
+
+    #define SEGY_BIG_ENDIAN_FLAG 0x01020304
+    #define SEGY_LITTLE_ENDIAN_FLAG 0x04030201
+    #define SEGY_PAIRWISE_ENDIAN_FLAG 0x02010403
+
+    #elif defined(IS_LITTLE_ENDIAN)
+
+    #define SEGY_BIG_ENDIAN_FLAG 0x04030201
+    #define SEGY_LITTLE_ENDIAN_FLAG 0x01020304
+    #define SEGY_PAIRWISE_ENDIAN_FLAG 0x03040102
+
+    #endif
+    #define SEGY_SYSTEM_ENDIAN_FLAG 16909060
+    """
+    int SEGY_UNKNOWN
+    int TXT_HDR_BYTES
+    int BIN_HDR_BYTES
+    int TRC_HDR_BYTES
+    int TAP_LBL_BYTES
+
+    int SEGY_BIG_ENDIAN_FLAG
+    int SEGY_LITTLE_ENDIAN_FLAG
+    int SEGY_PAIRWISE_ENDIAN_FLAG
+    int SEGY_SYSTEM_ENDIAN_FLAG
 
 # constants to be defined in segy_standard.pyx
 cdef:
     # Expected Sizes
-    size_t TXT_HDR_SIZE
     size_t BIN_HDR_SIZE
     size_t TRC_HDR_SIZE
+    size_t EXT_HDR_SIZE
+    size_t SU_HDR_SIZE
 
-    i2 UNKNOWN
-
-    # data_format codes
-    i2 DAT_F32_IBM
-    i2 DAT_I32
-    i2 DAT_I16
-    i2 DAT_F32_FGN
-    # rev 1
-    i2 DAT_F32_I3E
-    i2 DAT_F64_I3E
-    i2 DAT_I24
-    i2 DAT_I08
-    # rev 2
-    i2 DAT_I64
-    i2 DAT_U32
-    i2 DAT_U16
-    i2 DAT_U64
-    i2 DAT_U24
-    i2 DAT_U08
-
-    # trace sorting codes
-    i2 SORT_NONE
-    i2 SORT_CMN_DP_PT
-    i2 SORT_SINGLE
-    i2 SORT_HORIZ_STK
-    # rev 1
-    i2 SORT_OTHER
-    i2 SORT_CMN_SRC_PT
-    i2 SORT_CMN_RX_PT
-    i2 SORT_CMN_OFF_PT
-    i2 SORT_CMN_MD_PT
-    i2 SORT_CMN_CNV_PT
-
-    # Sweep type code
-    ui2 SWP_LINEAR
-    ui2 SWP_PARABOLIC
-    ui2 SWP_EXP
-    ui2 SWP_OTHER
-    ui2 TPR_LINEAR
-    ui2 TPR_COS
-    ui2 TPR_OTHER
-
-    i2 CORR_DATA_YES
-    i2 CORR_DATA_NO
-
-    i2 BIN_GAIN_YES
-    i2 BIN_GAIN_NO
-
-    i2 AMP_REC_NONE
-    i2 AMP_REC_SPH
-    i2 AMP_REC_AGC
-    i2 AMP_REC_OTHER
-
-    i2 MEASURE_METERS
-    i2 MEASURE_FEET
-
-    i2 POLARITY_UP_NEG
-    i2 POLARITY_UP_POS
-
-    i2 VIB_POL_338_023
-    i2 VIB_POL_023_068
-    i2 VIB_POL_067_113
-    i2 VIB_POL_113_158
-    i2 VIB_POL_158_203
-    i2 VIB_POL_203_248
-    i2 VIB_POL_248_293
-    i2 VIB_POL_293_338
-
-    i4 ENDIAN_CORRECT
-    i4 ENDIAN_REV
-    i4 ENDIAN_PAIR_SWAP
-
-    #Time codes, rev 2
-    i2 TIME_LOCAL
-    i2 TIME_GMT
-    i2 TIME_OTHER
-    i2 TIME_UTC
-    i2 TIME_GPS
-
-    # Survey Types, rev 2.1
-    i2 SRV_LAND
-    i2 SRV_MARINE
-    i2 SRV_TRANS
-    i2 SRV_DWN_HOLE
-    i2 SRV_1D
-    i2 SRV_2D
-    i2 SRV_3D
-    i2 SRV_TIME_LAPSE
-    i2 SRV_PARALLEL_LINES
-    i2 SRV_CRS_SPREAD
-    i2 SRV_PATCHES
-    i2 SRV_TWD_STRMR
-    i2 SRV_OBS
-    i2 SRV_RAND
-
-    i2 TRC_ID_OTHER
-    i2 TRC_ID_TIME_SEISMIC
-    i2 TRC_ID_DEAD
-    i2 TRC_ID_DUMMY
-    i2 TRC_ID_TIMEBREAK
-    i2 TRC_ID_UPHOLE
-    i2 TRC_ID_SWEEP
-    i2 TRC_ID_TIMING
-    i2 TRC_ID_WATERBRK
-    i2 TRC_ID_NEARGUNSIG
-    i2 TRC_ID_FARGUNSIG
-    i2 TRC_ID_PRESSURE
-    i2 TRC_ID_VERT
-    i2 TRC_ID_CROSS
-    i2 TRC_ID_INLINE
-    i2 TRC_ID_ROT_VERT
-    i2 TRC_ID_ROT_TRANS
-    i2 TRC_ID_ROT_RADIAL
-    i2 TRC_ID_VIBEMASS
-    i2 TRC_ID_VIBEBASE
-    i2 TRC_ID_VIBEGFORCE
-    i2 TRC_ID_VIBEREF
-    i2 TRC_ID_TV_PAIR
-    i2 TRC_ID_TD_PAIR
-    i2 TRC_ID_DV_PAIR
-    i2 TRC_ID_DEPTH_DOMAIN
-    i2 TRC_ID_GRAV_POT
-    i2 TRC_ID_EFIELD_VERT
-    i2 TRC_ID_EFIELD_CROSS
-    i2 TRC_ID_EFIELD_INLINE
-    i2 TRC_ID_ROT_EFIELD_VERT
-    i2 TRC_ID_ROT_EFIELD_TRANS
-    i2 TRC_ID_ROT_EFIELD_RAD
-    i2 TRC_ID_BFIELD_VERT
-    i2 TRC_ID_BFIELD_CROSS
-    i2 TRC_ID_BFIELD_INLINE
-    i2 TRC_ID_ROT_BFIELD_VERT
-    i2 TRC_ID_ROT_BFIELD_TRANS
-    i2 TRC_ID_ROT_BFIELD_RAD
-    i2 TRC_ID_PITCH
-    i2 TRC_ID_YAW
-    i2 TRC_ID_ROLL
-
-    i2 TRC_PRODUCTION_DATA
-    i2 TRC_TEST_DATA
-    i2 TRC_GAIN_TYPE
-
-
-cdef packed struct binary_header:
+cdef struct binary_header:
     i4 job_id
     i4 line_number
     i4 reel_number
@@ -191,28 +90,28 @@ cdef packed struct binary_header:
     ui4 next_trace_per_ensemble
     ui4 next_aux_trace_per_ensemble
     ui4 next_sample_per_trace
-    r8 dext_sample # in \mu s, Hz, m, or ft.
-    r8 dext_sample_field # in \mu s, Hz, m, or ft.
+    f8 dext_sample # in \mu s, Hz, m, or ft.
+    f8 dext_sample_field # in \mu s, Hz, m, or ft.
     ui4 next_sample_per_trace_field
     ui4 next_fold
     i4 byte_order_id
-    ui1[200] unassigned_1
+    char[200] unassigned_1
     # rev 1
     ui1 major_rev
     ui1 minor_rev
     ui2 is_fixed_traces
-    ui2 next_txt_hdr
+    i2 next_txt_hdr
     # rev 2 (up to unassigned_2)
     ui2 nmax_ext_trc_hdr # rev 2.1 (In rev1 this is a ui4, and there is no survey type
     i2 survey_type # rev 2.1
     i2 time_basis
     ui8 n_traces
     ui8 first_trace_byte_offset
-    ui4 n_trailer_stanzas
-    ui1[68] unassigned_2
+    i4 n_trailer_stanzas
+    char[68] unassigned_2
 
 
-cdef packed struct trace_header:
+cdef struct trace_header:
     # rev 0
     ui4 linetrc # 1
     ui4 reeltrc # 5
@@ -305,38 +204,38 @@ cdef packed struct trace_header:
     i4 smeasure_mantis # 225
     i2 smeasuret_scale # 229
     i2 src_units # 231
-    char[8] end
+    char[8] header_name
 
-cdef packed struct extended_trace_header:
+cdef struct extended_trace_header:
     ui8 linetrc
     ui8 reeltrc
     i8 ffid
     i8 cdp
-    r8 relev
-    r8 rdepth
-    r8 selev
-    r8 sdepth
-    r8 rdatum
-    r8 sdatum
-    r8 wdepthso
-    r8 wdepthrc
-    r8 sht_x
-    r8 sht_y
-    r8 rec_x
-    r8 rec_y
-    r8 offset
+    f8 relev
+    f8 rdepth
+    f8 selev
+    f8 sdepth
+    f8 rdatum
+    f8 sdatum
+    f8 wdepthso
+    f8 wdepthrc
+    f8 sht_x
+    f8 sht_y
+    f8 rec_x
+    f8 rec_y
+    f8 offset
     ui4 nsamps
     i4 nanosec
-    r8 dt
+    f8 dt
     i4 cable_num
     ui2 n_exttrchdr
     i2 last_trc
-    r8 cdp_x
-    r8 cdp_y
-    ui1[56] reserved
+    f8 cdp_x
+    f8 cdp_y
+    char[56] reserved
     char[8] header_name
 
-cdef packed struct su_trace:
+cdef struct su_trace:
     int tracl
     int tracr
     int fldr
@@ -419,91 +318,3 @@ cdef packed struct su_trace:
     short mark
     short shortpad
     short unass[14]
-
-cdef packed struct unocal_trace:
-    int tracl
-    int tracr
-    int fldr
-    int tracf
-    int ep
-    int cdp
-    int cdpt
-    short trid
-    short nvs
-    short nhs
-    short duse
-    int offset
-    int gelev
-    int selev
-    int sdepth
-    int gdel
-    int sdel
-    int swdep
-    int gwdep
-    short scalel
-    short scalco
-    int  sx
-    int  sy
-    int  gx
-    int  gy
-    short counit
-    short wevel
-    short swevel
-    short sut
-    short gut
-    short sstat
-    short gstat
-    short tstat
-    short laga
-    short lagb
-    short delrt
-    short muts
-    short mute
-    unsigned short ns
-    unsigned short dt
-    short gain
-    short igc
-    short igi
-    short corr
-    short sfs
-    short sfe
-    short slen
-    short styp
-    short stas
-    short stae
-    short tatyp
-    short afilf
-    short afils
-    short nofilf
-    short nofils
-    short lcf
-    short hcf
-    short lcs
-    short hcs
-    short year
-    short day
-    short hour
-    short minute
-    short sec
-    short timbas
-    short trwf
-    short grnors
-    short grnofr
-    short grnlof
-    short gaps
-    short otrav
-    # SU Specifics
-    float d1
-    float f1
-    float d2
-    float f2
-    float ungpow
-    float unscale
-    # Unocal Specifics
-    short mark
-    short mutb
-    float dz
-    float fz
-    short n2
-    int ntr
-    short unass[8]

@@ -10,25 +10,15 @@ if cc.has_function('ftello', prefix: '#define _GNU_SOURCE\n#include <stdio.h>')
     io_args += ['-DHAVE_FTELLO']
 endif
 
-# Check for byteswapping builtins
-if cc.has_function('__builtin_bswap16')
-    io_args += ['-DHAVE___BUILTIN_BSWAP16']
-endif
-if cc.has_function('__builtin_bswap32')
-    io_args += ['-DHAVE___BUILTIN_BSWAP32']
-endif
-if cc.has_function('__builtin_bswap64')
-    io_args += ['-DHAVE___BUILTIN_BSWAP64']
-endif
-
 py.extension_module(
-    '__init__',
-    '__init__.pyx',
+    '_io',
+    '_io.pyx',
     cython_args: cython_args,
     c_args: io_args,
     install: true,
     subdir: module_path,
     dependencies: [py_dep],
+    include_directories: spy_include,
 )
 
 py.extension_module(
@@ -38,7 +28,8 @@ py.extension_module(
     c_args: io_args,
     install: true,
     subdir: module_path,
-    dependencies: [py_dep, np_dep],
+    dependencies: [py_dep],
+    include_directories: spy_include,
 )
 
 py.extension_module(
@@ -48,10 +39,11 @@ py.extension_module(
     c_args: io_args,
     install: true,
     subdir: module_path,
-    dependencies: [py_dep, np_dep],
+    dependencies: [py_dep, su_dep],
+    include_directories: spy_include,
 )
 
-python_sources = []
+python_sources = ['__init__.py']
 
 py.install_sources(
   python_sources,

@@ -55,6 +55,7 @@ def test_swap_little_and_system(dtype, arr):
     else:
         sys_ref = little_ref
 
+
     if arr:
         inplace = arr == 'inplace'
         little_ref = np.full(10, little_ref, dtype=dtype)
