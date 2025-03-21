@@ -633,21 +633,21 @@ cdef class SEGYTrace:
             elif self._dtype == DataFormat.uint08:
                 buffer.format = 'B'
             elif self._dtype == DataFormat.int16:
-                buffer.format = 'h'
+                buffer.format = '=h'
             elif self._dtype == DataFormat.uint16:
-                buffer.format = 'H'
+                buffer.format = '=H'
             elif self._dtype == DataFormat.int32:
-                buffer.format = 'i'
+                buffer.format = '=i'
             elif self._dtype == DataFormat.uint32:
-                buffer.format = 'I'
+                buffer.format = '=I'
             elif self._dtype == DataFormat.int64:
-                buffer.format = 'l'
+                buffer.format = '=q'
             elif self._dtype == DataFormat.uint64:
-                buffer.format = 'L'
+                buffer.format = '=Q'
             elif self._dtype == DataFormat.float32_ieee:
-                buffer.format = 'f'
+                buffer.format = '=f'
             else: # self._dtype == DataFormat.float64_ieee
-                buffer.format = 'd'
+                buffer.format = '=d'
         else:
             buffer.format = NULL
 
