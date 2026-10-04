@@ -8,7 +8,7 @@ from libc.string cimport memset, memcpy
 cimport cython
 cimport cpython.buffer as pybuf
 
-from .io cimport PyFile_Dup, PyFile_DupClose, spy_off_t, spy_fseek
+from .io cimport PyFile_Dup, PyFile_DupClose, spy_off_t, spy_fseek, DupResult
 
 import os
 from contextlib import nullcontext
@@ -362,9 +362,8 @@ cdef class TraceCollection:
             return self
         cdef:
             Trace trace
-            FILE *fd
+            DupResult res
             bint file_owner
-            spy_off_t orig_pos = 0
 
 
         if hasattr(filename, 'write'):
@@ -379,13 +378,13 @@ cdef class TraceCollection:
             file_owner = True
 
         with ctx as file:
-            fd, orig_pos = PyFile_Dup(file, "wb")
+            res = PyFile_Dup(file, "wb")
             try:
-                self.hdr.to_file_descriptor(fd)
+                self.hdr.to_file_descriptor(res.handle)
                 for trace in self:
-                    trace.to_file_descriptor(fd)
+                    trace.to_file_descriptor(res.handle)
             finally:
-                PyFile_DupClose(file, fd, orig_pos)
+                PyFile_DupClose(file, res.handle, res.offset)
             file.flush()
             if file_owner:
                 os.fsync(file.fileno())
@@ -494,8 +493,12 @@ cdef class _FileTraceIterator(BaseTraceIterator):
         self.file = file
         self.hdr = hdr
 
+        cdef DupResult res
+
         try:
-            self.fd, self.orig_pos = PyFile_Dup(file, "rb")
+            res = PyFile_Dup(file, "rb")
+            self.fd = res.handle
+            self.orig_pos = res.offset
             if self.owner:
                 # Advance fd to the start of the traces:
                 spy_fseek(self.fd, type(hdr).get_cstruct_byte_size(), SEEK_CUR)

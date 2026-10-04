@@ -83,9 +83,12 @@ cdef extern from * nogil:
     int spy_fseek(FILE *stream, spy_off_t offset, int whence)
     spy_off_t spy_ftell(FILE *stream)
 
+# Define the C-struct
+cdef struct DupResult:
+    FILE * handle
+    spy_off_t offset
 
-
-cdef (FILE *, spy_off_t) PyFile_Dup(object file, char* mode)
+cdef DupResult PyFile_Dup(object file, char* mode)
 cdef int PyFile_DupClose(object file, FILE* handle, spy_off_t orig_pos)
 
 cdef size_t write_struct_to_file(

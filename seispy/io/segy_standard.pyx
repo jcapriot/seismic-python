@@ -84,6 +84,24 @@ cdef:
         DataFormat.uint08 : 1,
     }
 
+cdef DataFormat str_to_data_format(str dtype_string):
+    match dtype_string:
+        case 'f32': return DataFormat.float32_ieee
+        case 'f64' : return  DataFormat.float64_ieee
+        case 'ibmf32': return  DataFormat.float32_ibm
+        case 'fixed32': return  DataFormat.fixed32
+        case 'i08': return  DataFormat.int08
+        case 'i16': return  DataFormat.int16
+        case 'i24': return  DataFormat.int24
+        case 'i32': return  DataFormat.int32
+        case 'i64': return  DataFormat.int64
+        case 'u08': return  DataFormat.uint08
+        case 'ui16': return  DataFormat.uint16
+        case 'ui24': return  DataFormat.uint24
+        case 'ui32': return  DataFormat.uint32
+        case 'ui64': return  DataFormat.uint64
+        case _: raise ValueError(f"Unrecognized dtype_string: {dtype_string}")
+
 @cython.boundscheck(False)
 cdef void ibm_to_float(uint8_t *inp, size_t n_items) noexcept nogil:
     cdef:
@@ -133,7 +151,7 @@ cdef void ibm_to_float(uint8_t *inp, size_t n_items) noexcept nogil:
 
 
 @cython.boundscheck(False)
-cdef void float_to_ibm(uint8_t *inp, size_t n_items) nogil:
+cdef void float_to_ibm(uint8_t *inp, size_t n_items) noexcept nogil:
     cdef:
         uint32_t it[4]
         uint32_t mt[4]
@@ -142,15 +160,16 @@ cdef void float_to_ibm(uint8_t *inp, size_t n_items) nogil:
 
         uint32_t * _u = <uint32_t *> &inp[0]
 
-    it[:] = [0x21200000U, 0x21400000U, 0x21800000U, 0x22100000U]
-    mt[:] = [2, 4, 8, 1]
+    with nogil:
+        it[:] = [0x21200000U, 0x21400000U, 0x21800000U, 0x22100000U]
+        mt[:] = [2, 4, 8, 1]
 
-    for i in range(n_items):
-        ix = (_u[i] & 0x01800000U) >> 23
-        iexp = ((_u[i] & 0x7e000000U) >> 1) + it[ix]
-        manthi = (mt[ix] * (_u[i] & 0x007fffffU)) >> 3
-        manthi = (manthi + iexp) | (_u[i] & 0x80000000U)
-        _u[i] = manthi if (_u[i] & 0x7fffffffU) else 0
+        for i in range(n_items):
+            ix = (_u[i] & 0x01800000U) >> 23
+            iexp = ((_u[i] & 0x7e000000U) >> 1) + it[ix]
+            manthi = (mt[ix] * (_u[i] & 0x007fffffU)) >> 3
+            manthi = (manthi + iexp) | (_u[i] & 0x80000000U)
+            _u[i] = manthi if (_u[i] & 0x7fffffffU) else 0
 
 
 @cython.boundscheck(False)
@@ -786,7 +805,7 @@ cdef class SEGYCollection:
         if coll.hdr.major_rev < 2:
             coll.hdr.nmax_ext_trc_hdr = 0
             if data_format is not None:
-                getattr(DataFormat, data_format)
+                coll.hrd.data_format = str_to_data_format(data_format)
             elif coll.hdr.data_format == 0:
                 coll.hdr.data_format = DataFormat.float32_ibm
 
@@ -934,9 +953,12 @@ cdef class _FileSEGYIterator:
             raise ValueError("Unknown File Endian.")
 
         cdef spyc.spy_off_t trace_start
+        cdef spy_io.DupResult res
 
         try:
-            self.fd, self.orig_pos = spy_io.PyFile_Dup(file, "rb")
+            res = spy_io.PyFile_Dup(file, "rb")
+            self.fd = res.handle
+            self.orig_pos = res.offset
             if self.owner:
                 if coll.hdr.major_rev >= 2 and coll.hdr.first_trace_byte_offset != 0:
                     trace_start = coll.hdr.first_trace_byte_offset
@@ -1033,9 +1055,12 @@ cdef class _FileSEGYToTraceIterator(spyc.BaseTraceIterator):
         self.hdr.n_traces = self.bhdr.n_traces
 
         cdef spyc.spy_off_t trace_start
+        cdef spy_io.DupResult res
 
         try:
-            self.fd, self.orig_pos = spy_io.PyFile_Dup(file, "rb")
+            res = spy_io.PyFile_Dup(file, "rb")
+            self.fd = res.handle
+            self.orig_pos = res.offset
             if self.owner:
                 if coll.hdr.major_rev >= 2 and coll.hdr.first_trace_byte_offset != 0:
                     trace_start = coll.hdr.first_trace_byte_offset

@@ -48,9 +48,10 @@ cdef extern from *:
     """
 
 
-cdef (FILE *, spy_off_t) PyFile_Dup(object file, char * mode):
+cdef DupResult PyFile_Dup(object file, char * mode):
     cdef:
         int fd, fd2
+        DupResult out
         Py_ssize_t fd2_tmp
         spy_off_t pos, orig_pos
         FILE *handle
@@ -61,8 +62,10 @@ cdef (FILE *, spy_off_t) PyFile_Dup(object file, char * mode):
         fd = PyObject_AsFileDescriptor(file)
     except OSError:
         raise IOError(f"Cannot write to a {type(file).__name__} object.")
+    out.handle = NULL
+    out.offset = 0
     if fd == -1:
-        return NULL, 0
+        return out
     fd2_tmp = os.dup(fd)
     if fd2_tmp < INT_MIN or fd2_tmp > INT_MAX:
         raise IOError("Getting an 'int' from os.dup() failed")
@@ -72,7 +75,9 @@ cdef (FILE *, spy_off_t) PyFile_Dup(object file, char * mode):
     orig_pos = spy_ftell(handle)
     if orig_pos == -1:
         if isinstance(file, io.RawIOBase):
-            return handle, orig_pos
+            out.handle = handle
+            out.offset = orig_pos
+            return out
         else:
             fclose(handle)
             raise IOError("obtaining file position failed")
@@ -85,7 +90,10 @@ cdef (FILE *, spy_off_t) PyFile_Dup(object file, char * mode):
     if spy_fseek(handle, pos, SEEK_SET) == -1:
         fclose(handle)
         raise IOError("seeking file failed")
-    return handle, orig_pos
+    
+    out.handle = handle
+    out.offset = orig_pos
+    return out
 
 cdef int PyFile_DupClose(object file, FILE * handle, spy_off_t orig_pos):
     cdef:
