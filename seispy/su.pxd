@@ -813,6 +813,12 @@ cdef extern from "su.h" nogil:
     void polygonalFilter(float *f, float *amps, int npoly, int nfft, float dt, float *filter, int *intfr)
     void su_filter(float *data, int nt, int nfft, const float *filter, float *rt, complex *ct)
 
+    # stretching_moveout_resamp
+    void su_nmo_tables(int nt, float dt, float ft, float offset, const float *ovvt, float smute, int upward,
+        int invert, int sscale, float *ttn, float *atn, float *tnt, float *at, int *itmute_out)
+    void su_nmo(float *data, int nt, float dt, float ft, int itmute, int lmute, int sscale, int invert,
+        const float *ttn, const float *atn, const float *tnt, const float *at, float *q)
+
     # operations
     void su_op_saf(float *data, int nt, float *tmp)
     void su_op_freq(float *data, int nt, float dt, float *tmp, float *tmp1)

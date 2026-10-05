@@ -3,6 +3,9 @@ subdir('io')
 subdir('filters')
 subdir('amplitudes')
 subdir('operations')
+subdir('tapering')
+subdir('windowing')
+subdir('stretching')
 subdir('synthetics')
 
 python_sources = [

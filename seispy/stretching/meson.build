@@ -1,15 +1,10 @@
-module_path = 'seispy/amplitudes'
+module_path = 'seispy/stretching'
 
 python_sources = [
     '__init__.py',
-    '_pertrace.py',
 ]
 
-cython_sources = [
-    '_gain.pyx',
-]
-
-foreach cy_source : cython_sources
+foreach cy_source : ['_resample.pyx', '_nmo.pyx']
     py.extension_module(
         cy_source.replace('.pyx', ''),
         cy_source,

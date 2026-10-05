@@ -185,13 +185,44 @@ cdef class Trace:
             memcpy(&bys[SPY_TRC_HDR_SIZE], &self.data[0], data_size)
         return bys
 
+    def replace(self, data=None, **fields):
+        """A copy of this trace, with new samples and/or changed header values.
+
+        ``data`` are the new samples (``n_sample`` follows them), by default a copy of the old ones. ``fields`` are the
+        names of header values (see ``trace.header``) and what to change them to.
+        """
+        cdef:
+            spy_trace_header *hdr
+            float[::1] new_data
+            dict header = self.hdr[0]
+        unknown = set(fields) - set(header)
+        if unknown:
+            raise TypeError(f"Unknown header values: {sorted(unknown)}, expected some of {sorted(header)}")
+        header.update(fields)
+        if data is None:
+            new_data = np.array(self.data, dtype=np.float32)
+        else:
+            new_data = np.require(data, dtype=np.float32, requirements='C').reshape(-1).copy()
+        header['n_sample'] = new_data.shape[0]
+        hdr = new_hdr()
+        try:
+            hdr[0] = header  # (a dict converts to the struct)
+        except Exception:
+            free(hdr)
+            raise
+        return Trace.from_trace(hdr, new_data, True)
+
     def __reduce__(self):
         return _trace_from_bytes, (bytes(self.as_bytes()),)
 
     def __getbuffer__(self, Py_buffer *buffer, int flags):
         buffer.obj = self
-        buffer.buf = <void *> &self.data[0]
-        buffer.len = self.data.shape[0]
+        if self.data.shape[0] > 0:
+            buffer.buf = <void *> &self.data[0]
+        else:
+            # (nothing to point at, but it can not be NULL)
+            buffer.buf = <void *> self.hdr
+        buffer.len = self.data.shape[0] * sizeof(float)
         buffer.itemsize = sizeof(float)
         buffer.ndim = 1
 

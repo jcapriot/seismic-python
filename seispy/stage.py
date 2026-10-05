@@ -22,7 +22,9 @@ Every stage also declares how finely its work can be split up (``parallelism``):
 """
 import functools
 
-__all__ = ["Stage", "Pipeline", "stage", "PARALLELISM_LEVELS"]
+from .container import as_trace_iterator, from_iterable
+
+__all__ = ["Stage", "Pipeline", "stage", "per_trace", "header_value", "PARALLELISM_LEVELS"]
 
 # ordered from least to most restrictive
 PARALLELISM_LEVELS = ("trace", "ensemble", "serial")
@@ -112,3 +114,19 @@ def stage(factory=None, *, parallelism="serial", name=None, validate=False):
     if factory is None:
         return decorate
     return decorate(factory)
+
+
+def header_value(trace, key):
+    """A number from a trace: the header value called `key`, or `key(trace)` if it is a function."""
+    if callable(key):
+        return float(key(trace))
+    return float(trace.header[key])
+
+
+def per_trace(upstream, func):
+    """Apply ``func(trace) -> trace`` to every trace of ``upstream``, for stages that are written in python.
+
+    The number of traces is kept (if it is known).
+    """
+    source = as_trace_iterator(upstream)
+    return from_iterable((func(trace) for trace in source), n_traces=source.n_traces)

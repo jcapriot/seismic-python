@@ -150,6 +150,11 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.filters.filter` | `sufilter` | zero-phase, tapered polygonal filter |
 | `seispy.amplitudes.gain` | `sugain` | tpow, epow, gpow, agc, clipping, balancing, ... |
 | `seispy.operations.*` | `suop` | one stage per operation: `abs()`, `sqr()`, `slog10()`, `diff()`, `mean(nw=11)`, ... |
+| `seispy.amplitudes.zero`, `nan`, `normalize` | `suzero`, `sunan`, `sunormalize` | zero a time window, replace NaNs and Infs, normalize by rms/max/median |
+| `seispy.amplitudes.weight`, `ai2r`, `r2ai` | `suweight`, `suai2r`, `sur2ai` | weight traces by a header value, impedance to reflectivity and back |
+| `seispy.tapering.taper`, `ramp` | `sutaper`, `suramp` | taper the start and end of traces, and/or the edge traces of a panel |
+| `seispy.windowing.mute`, `wind`, `kill` | `sumute`, `suwind`, `sukill` | mute above/below a curve (modes 0-4), window by header value and in time, zero traces |
+| `seispy.stretching.shift`, `resamp`, `reduce`, `nmo` | `sushift`, `suresamp`, `sureduce`, `sunmo` | shift/window in time, sinc resampling, reduced time, NMO with velocity functions of time and CDP |
 
 ```python
 from seispy.synthetics import synlv
@@ -168,4 +173,6 @@ on the (zero-copy) numpy view of the trace's samples, and the three that are mor
 the first trace, so in the library versions those are arguments, which is what lets the stages run in parallel. The
 few places where the library versions differ from the programs, because the program is plainly wrong, are listed at the
 top of each source file (`suop.c` has the most, `sugain.c` has a typo in its first-sample agc gain). The stages do not
-support SU parameters that need header words (`mark`) or temporary files (`tmpdir`).
+support SU parameters that need header words that seispy does not have (`mark`, `tracl`, `muts`, ...) or
+temporary files (`tmpdir`). Where SU takes a header word by name (`key=offset`), these take the name of a value in
+`trace.header`, or a function of a trace.

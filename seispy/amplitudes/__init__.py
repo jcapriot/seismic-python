@@ -1,7 +1,8 @@
 from ._gain import _gain
+from ._pertrace import zero, nan, normalize, weight, ai2r, r2ai
 from ..stage import Stage
 
-__all__ = ['gain']
+__all__ = ['gain', 'zero', 'nan', 'normalize', 'weight', 'ai2r', 'r2ai']
 
 
 def gain(*, panel=False, **kwargs):

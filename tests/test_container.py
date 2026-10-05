@@ -18,6 +18,15 @@ def test_trace_constructor():
     npt.assert_equal(np.asarray(tr), data.astype(np.float32))
 
 
+def test_empty_trace_has_an_empty_buffer():
+    tr = Trace(np.zeros(0), d_sample=0.004)
+    assert np.asarray(tr).shape == (0,)
+    assert np.asarray(tr).dtype == np.float32
+    assert memoryview(tr).nbytes == 0
+    # and a real one reports its size in bytes
+    assert memoryview(Trace(np.zeros(5), d_sample=0.004)).nbytes == 20
+
+
 def test_trace_bad_units():
     with pytest.raises(KeyError):
         Trace(np.zeros(4), d_sample=1.0, sampling_unit='parsecs')
