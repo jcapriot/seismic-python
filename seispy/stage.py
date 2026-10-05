@@ -85,7 +85,7 @@ class Pipeline(Stage):
         return " | ".join(repr(s) for s in self.stages)
 
 
-def stage(factory=None, *, parallelism="serial", name=None):
+def stage(factory=None, *, parallelism="serial", name=None, validate=False):
     """Turn an iterator class ``factory(upstream, **params)`` into a function returning `Stage` objects.
 
     Can be used directly, ``bfilt = stage(butterworth_bandpass, parallelism='trace')``, or as a decorator
@@ -93,12 +93,16 @@ def stage(factory=None, *, parallelism="serial", name=None):
 
     `parallelism` defaults to the safe ``'serial'``, so a stage has to opt in to being split across workers.
     `name` is what the stage is called when printed (e.g. the SU program name), by default the factory's name.
+    With `validate`, the parameters are checked as soon as the stage is made (by making the factory's iterator
+    around an empty input) instead of when it is first connected to something.
     """
     _check_level(parallelism)
 
     def decorate(factory):
         @functools.wraps(factory)
         def make(*args, **kwargs):
+            if validate:
+                factory((), *args, **kwargs)
             return Stage(factory, *args, parallelism=parallelism, name=name, **kwargs)
 
         if name is not None:

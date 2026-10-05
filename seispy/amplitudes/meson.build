@@ -1,12 +1,11 @@
-module_path = 'seispy/filters'
+module_path = 'seispy/amplitudes'
 
 python_sources = [
     '__init__.py',
 ]
 
 cython_sources = [
-    '_bandpass.pyx',
-    '_filter.pyx',
+    '_gain.pyx',
 ]
 
 foreach cy_source : cython_sources

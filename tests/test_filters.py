@@ -19,7 +19,7 @@ def _amp_at(trace, f, dt=0.002):
 
 
 def test_only_stages_are_public():
-    assert seispy.filters.__all__ == ['bfilt']
+    assert seispy.filters.__all__ == ['bfilt', 'filter']
     assert not hasattr(seispy.filters, 'butterworth_bandpass')
 
 

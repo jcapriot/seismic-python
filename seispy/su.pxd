@@ -799,6 +799,25 @@ cdef extern from "su.h" nogil:
     void su_bfhighpass(int zerophase, int npoles, float f3db, size_t nt, float *data_in, float *data_out);
     void su_bflowpass(int zerophase, int npoles, float f3db, size_t nt, float *data_in, float *data_out);
 
+    # amplitudes
+    void su_gain_tpow_table(float *tpowfac, int nt, float tmin, float dt, float tpow, float tred)
+    void su_gain_epow_table(float *epowfac, int nt, float tmin, float dt, float epow, float etpow)
+    void su_gain(float *data, float tpow, float epow, float gpow,
+        int agc, int gagc, int qbal, int pbal, int mbal, float scale, float bias,
+        float trap, float clip, float qclip, int iwagc,
+        int nt, int maxbal, float pclip, float nclip,
+        const float *tpowfac, const float *epowfac,
+        float *absdata, float *agcdata, float *d2, float *w, float *s)
+
+    # filters
+    void polygonalFilter(float *f, float *amps, int npoly, int nfft, float dt, float *filter, int *intfr)
+    void su_filter(float *data, int nt, int nfft, const float *filter, float *rt, complex *ct)
+
+    # operations
+    void su_op_saf(float *data, int nt, float *tmp)
+    void su_op_freq(float *data, int nt, float dt, float *tmp, float *tmp1)
+    void su_op_despike(float *data, int nt, int nw, float *tmp, float *tomed)
+
     #Synthetics
     void su_synlv(float *data,
                   float xs, float zs, float xg, float zg,

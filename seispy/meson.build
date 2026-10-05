@@ -1,6 +1,8 @@
 subdir('include')
 subdir('io')
 subdir('filters')
+subdir('amplitudes')
+subdir('operations')
 subdir('synthetics')
 
 python_sources = [

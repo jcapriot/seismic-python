@@ -137,3 +137,35 @@ Stages declare how finely they can be split: `parallelism='trace'` (cut anywhere
 gathers, give `pmap` a `key=` header name), or `'serial'` (the default; `pmap` refuses it). Threads give a speedup
 for stages that release the GIL (the SU filter kernels do), otherwise use `executor='process'`.
 See `examples/parallel_benchmark.py`.
+
+
+## Available programs
+Stages are named after the SU program they port, without the `su` prefix, and live in packages named after SU's own
+categories. Their parameters are the SU parameters, as keyword arguments.
+
+| seispy | SU | |
+|---|---|---|
+| `seispy.synthetics.spike`, `plane`, `synlv` | `suspike`, `suplane`, `susynlv` | sources |
+| `seispy.filters.bfilt` | `subfilt` | Butterworth filters |
+| `seispy.filters.filter` | `sufilter` | zero-phase, tapered polygonal filter |
+| `seispy.amplitudes.gain` | `sugain` | tpow, epow, gpow, agc, clipping, balancing, ... |
+| `seispy.operations.*` | `suop` | one stage per operation: `abs()`, `sqr()`, `slog10()`, `diff()`, `mean(nw=11)`, ... |
+
+```python
+from seispy.synthetics import synlv
+from seispy.filters import filter
+from seispy.amplitudes import gain
+from seispy import operations as op
+
+traces = synlv() | gain(tpow=2.0) | filter(f=[10, 20, 60, 80]) | gain(agc=True, wagc=0.2) | op.sgn()
+```
+
+`gain`, `filter` and `bfilt` call the SU C code itself. Like `su_bfhighpass` and `su_synlv` before them, the work of
+each program is a library function in the SU sources (`su_gain`, `su_filter`/`polygonalFilter`), with the program's
+`main` left out of the build. The operations of `suop` are each a stage of their own: most are plain array arithmetic
+on the (zero-copy) numpy view of the trace's samples, and the three that are more than that (`op.saf`, `op.freq`,
+`op.despike`) are functions in the SU sources. The SU programs keep their lookup tables and scratch arrays in `static` variables filled in by
+the first trace, so in the library versions those are arguments, which is what lets the stages run in parallel. The
+few places where the library versions differ from the programs, because the program is plainly wrong, are listed at the
+top of each source file (`suop.c` has the most, `sugain.c` has a typo in its first-sample agc gain). The stages do not
+support SU parameters that need header words (`mark`) or temporary files (`tmpdir`).
