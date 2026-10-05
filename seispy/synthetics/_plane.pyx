@@ -4,7 +4,6 @@
 from .. cimport container as spyc
 import numpy as np
 from libc.math cimport fabs
-from libc.stdlib cimport malloc
 
 cdef class plane(spyc.BaseTraceIterator):
     cdef:
@@ -78,7 +77,7 @@ cdef class plane(spyc.BaseTraceIterator):
         itr = self.i
 
 
-        cdef float[::1] data = <float[:self.nt]> malloc(sizeof(float) * self.nt)
+        cdef float[::1] data = spyc.alloc_data(self.nt)
         data[:] = 0.0
 
         for i in range(self.n_planes):

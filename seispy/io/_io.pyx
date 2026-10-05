@@ -3,6 +3,7 @@
 from cpython.object cimport PyObject_AsFileDescriptor
 from libc.stdio cimport FILE, fclose, SEEK_SET, fwrite, fread
 from libc.limits cimport INT_MIN, INT_MAX
+import numpy as np
 from libc.stdlib cimport malloc
 from libc.string cimport memcpy
 cimport cython
@@ -269,7 +270,7 @@ cpdef size_t[:,::1] struct_dtype_info(object struct_dtype):
 
     cdef:
         size_t n_attrs = len(struct_dtype)
-        size_t[:,::1] info = <size_t[:3, :n_attrs]> malloc(3 * sizeof(size_t)*n_attrs)
+        size_t[:,::1] info = np.zeros((3, n_attrs), dtype=np.uintp)
         # info[0] offsets
         # info[1] sizes
         # info[2] n_elements

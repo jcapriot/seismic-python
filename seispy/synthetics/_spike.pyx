@@ -2,7 +2,6 @@
 # cython: linetrace=True
 
 from .. cimport container as spyc
-from libc.stdlib cimport malloc
 import numpy as np
 
 cdef class spike(spyc.BaseTraceIterator):
@@ -35,7 +34,7 @@ cdef class spike(spyc.BaseTraceIterator):
     cdef spyc.Trace next_trace(self):
         if self.i == self.hdr.n_traces:
             raise StopIteration()
-        cdef float[::1] data = <float[:self.nt]> malloc(sizeof(float) * self.nt)
+        cdef float[::1] data = spyc.alloc_data(self.nt)
         data[:] = 0.0
         for spike in self.spikes:
             if spike[0] == self.i:

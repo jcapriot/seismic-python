@@ -192,7 +192,10 @@ cdef class synlv(spyc.BaseTraceIterator):
 
         xr = xs + xo
 
-        cdef float[::1] data = <float[:self.nt]> malloc(self.nt * sizeof(float))
+        cdef float[::1] data = spyc.alloc_data(self.nt)
+        # NOTE: deliberately *not* released the GIL here. su_synlv -> addsinc (par/lib/modeling.c)
+        # lazily fills a function-local `static` sinc table with no synchronization, which is
+        # a data race if two threads call it at once.
         su.su_synlv(
             &data[0],
             xs, z, xr, z,

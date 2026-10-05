@@ -6,6 +6,8 @@ subdir('synthetics')
 python_sources = [
     '__init__.py',
     'plotting.py',
+    'stage.py',
+    'parallel.py',
 ]
 
 module_path = 'seispy'

@@ -33,6 +33,12 @@ cdef spy_trace_header* copy_of_hdr(spy_trace_header *hdr_in) nogil:
     memcpy(hdr, hdr_in, SPY_TRC_HDR_SIZE)
     return hdr
 
+cdef float[::1] alloc_data(size_t n_sample):
+    return np.empty(n_sample, dtype=np.float32)
+
+cdef unsigned char[::1] alloc_bytes(size_t n_bytes):
+    return np.empty(n_bytes, dtype=np.uint8)
+
 _SAMPLING_MAP = {'s':SamplingUnit.seconds, 'm':SamplingUnit.meters}
 _DOMAIN_MAP = {'unit':SamplingDomain.unit, 'fourier':SamplingDomain.fourier}
 
@@ -60,11 +66,11 @@ cdef class Trace:
         sampling_domain='unit',
 
     ):
-        self.trace_data = np.require(data, dtype=np.float32, requirements='C')
+        self.data = np.require(data, dtype=np.float32, requirements='C')
         cdef spy_trace_header *hdr = new_hdr()
         if hdr is NULL:
             raise MemoryError("Unable to allocate trace.")
-        hdr.n_sample = self.trace_data.shape[0]
+        hdr.n_sample = self.data.shape[0]
         hdr.d_sample = d_sample
         hdr.sample_start = sample_start
 
@@ -125,11 +131,13 @@ cdef class Trace:
             raise IOError("Unable to read trace header from file.")
 
         n_sample = hdr.n_sample
-        cdef float[::1] data = <float[:n_sample]> malloc(sizeof(float)*n_sample)
+        cdef float[::1] data = alloc_data(n_sample)
 
-        n_read = fread(&data[0], sizeof(float), n_sample, fd)
-        if n_read != n_sample:
-            raise IOError("Unable to read expected number of trace samples.")
+        if n_sample > 0:
+            n_read = fread(&data[0], sizeof(float), n_sample, fd)
+            if n_read != n_sample:
+                free(hdr)
+                raise IOError("Unable to read expected number of trace samples.")
 
         return Trace.from_trace(hdr, data, True)
 
@@ -161,19 +169,24 @@ cdef class Trace:
             free(hdr)
             raise ValueError(f"Incorrect number of bytes, expected {n_total_size}, got {bys.shape[0]}.")
 
-        cdef float[::1] data = <float[:n_sample]> malloc(sizeof(float)*n_sample)
+        cdef float[::1] data = alloc_data(n_sample)
         # copy data bytes
-        memcpy(&data[0], &bys[SPY_TRC_HDR_SIZE], sizeof(float)*n_sample)
+        if n_sample > 0:
+            memcpy(&data[0], &bys[SPY_TRC_HDR_SIZE], sizeof(float)*n_sample)
 
         return Trace.from_trace(hdr, data, True)
 
     cpdef unsigned char[::1] as_bytes(self):
         cdef size_t data_size = sizeof(float) * self.data.shape[0]
         cdef size_t trace_size = SPY_TRC_HDR_SIZE + data_size
-        cdef unsigned char[::1] bys = <unsigned char[:trace_size]> malloc(trace_size)
+        cdef unsigned char[::1] bys = alloc_bytes(trace_size)
         memcpy(&bys[0], self.hdr, SPY_TRC_HDR_SIZE)
-        memcpy(&bys[SPY_TRC_HDR_SIZE], &self.data[0], data_size)
+        if data_size > 0:
+            memcpy(&bys[SPY_TRC_HDR_SIZE], &self.data[0], data_size)
         return bys
+
+    def __reduce__(self):
+        return _trace_from_bytes, (bytes(self.as_bytes()),)
 
     def __getbuffer__(self, Py_buffer *buffer, int flags):
         buffer.obj = self
@@ -196,6 +209,10 @@ cdef class Trace:
 
     def __releasebuffer__(self, Py_buffer *buffer):
         pass
+
+def _trace_from_bytes(const unsigned char[::1] bys):
+    return Trace.from_bytes(bys)
+
 
 cdef class CollectionHeader:
 
@@ -229,11 +246,11 @@ cdef class CollectionHeader:
         if n_write != 1:
             raise IOError("Error writing n_traces to file.")
 
-        fwrite(&self.ensemble_type, sizeof(self.ensemble_type), 1, fd)
+        n_write = fwrite(&self.ensemble_type, sizeof(self.ensemble_type), 1, fd)
         if n_write != 1:
             raise IOError("Error writing ensemble_type to file.")
 
-        fwrite(&self.uniform_traces, sizeof(self.uniform_traces), 1, fd)
+        n_write = fwrite(&self.uniform_traces, sizeof(self.uniform_traces), 1, fd)
         if n_write != 1:
             raise IOError("Error writing uniform_traces to file.")
 
@@ -259,7 +276,7 @@ cdef class CollectionHeader:
     cpdef unsigned char[::1] as_bytes(self):
         cdef:
             size_t n_bytes = type(self).get_cstruct_byte_size()
-            unsigned char[::1] bys = <unsigned char[:n_bytes]> malloc(n_bytes)
+            unsigned char[::1] bys = alloc_bytes(n_bytes)
             size_t offset = 0
 
         #memcpy(&bys[0], &self.n_traces, n_bytes)
@@ -309,7 +326,7 @@ cdef class TraceCollection:
             ctx = open(os.fspath(filename), "rb")
 
         with ctx as f:
-            bts = f.read(n=CollectionHeader.get_cstruct_byte_size())
+            bts = f.read(CollectionHeader.get_cstruct_byte_size())
             hdr = CollectionHeader.from_bytes(bts)
 
         cdef TraceCollection new_segy = TraceCollection.__new__(TraceCollection)
@@ -353,6 +370,8 @@ cdef class TraceCollection:
             return self
         else:
             self.traces = [trace for trace in self]
+            # the length might not have been known up front (e.g. wrapped generators)
+            self.hdr.n_traces = len(self.traces)
             self.iterator = None
             self.file = None
             return self
@@ -360,6 +379,9 @@ cdef class TraceCollection:
     def to_file(self, filename):
         if self.on_disk:
             return self
+        if self.is_iterator and self.hdr.n_traces == 0:
+            # The header is written first, so the trace count has to be known.
+            self.to_memory()
         cdef:
             Trace trace
             DupResult res
@@ -395,6 +417,9 @@ cdef class TraceCollection:
         return self
 
     def to_stream(self, stream):
+        if self.is_iterator and self.hdr.n_traces == 0:
+            # The header is written first, so the trace count has to be known.
+            self.to_memory()
 
         if hasattr(stream, 'write'):
             ctx = nullcontext(stream)
@@ -423,6 +448,13 @@ cdef class BaseTraceIterator:
     cdef Trace next_trace(self):
         raise NotImplementedError(f"cdef next_trace is not implemented on {type(self)}.")
 
+    @property
+    def n_traces(self):
+        """Number of traces this iterator will produce, or None if that isn't known up front."""
+        if self.hdr.n_traces == 0:
+            return None
+        return self.hdr.n_traces
+
     def __next__(self):
         return self.next_trace()
 
@@ -437,6 +469,47 @@ cdef class BaseTraceIterator:
 
     def to_stream(self, stream):
         TraceCollection.from_trace_iterator(self).to_stream(stream)
+
+
+cdef class _IterableTraceIterator(BaseTraceIterator):
+    """Adapts any python iterable of Trace objects (e.g. a generator) to a BaseTraceIterator."""
+    cdef:
+        object it
+
+    def __init__(self, iterable, n_traces=None):
+        self.it = iter(iterable)
+        if n_traces is not None:
+            self.hdr.n_traces = n_traces
+        else:
+            try:
+                self.hdr.n_traces = len(iterable)
+            except TypeError:
+                # unknown length, n_traces stays 0
+                pass
+
+    cdef Trace next_trace(self):
+        item = next(self.it)  # StopIteration passes straight through
+        if not isinstance(item, Trace):
+            raise TypeError(f"Expected an iterable of Trace objects, got an item of type {type(item)}.")
+        self.i += 1
+        return <Trace> item
+
+
+def from_iterable(iterable, n_traces=None):
+    """Wrap any iterable of Trace (e.g. a generator) as a trace iterator.
+
+    ``n_traces`` is the number of traces the iterable will produce, if known (it is looked up with
+    ``len`` when not given).
+    """
+    return _IterableTraceIterator(iterable, n_traces)
+
+
+cpdef BaseTraceIterator as_trace_iterator(object obj):
+    if isinstance(obj, BaseTraceIterator):
+        return obj
+    if isinstance(obj, TraceCollection):
+        return obj.__iter__()
+    return _IterableTraceIterator(obj)
 
 
 cdef class _MemoryTraceIterator(BaseTraceIterator):
@@ -468,7 +541,7 @@ cdef class _FileTraceIterator(BaseTraceIterator):
         self.file = None
         self.hdr.n_traces = 0
 
-    def __dealoc__(self):
+    def __dealloc__(self):
         # make sure I get closed up when I'm garbage collected
         self._close_file()
 

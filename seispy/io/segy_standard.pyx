@@ -11,7 +11,7 @@ from libc.stdint cimport (
     UINT8_MAX, UINT16_MAX, UINT32_MAX, UINT64_MAX,
     SIZE_MAX, int8_t, int32_t, uint32_t, uint8_t, uint16_t, uint64_t
 )
-from libc.stdio cimport fwrite, fread, FILE, SEEK_CUR, feof
+from libc.stdio cimport fwrite, fread, FILE, SEEK_CUR, SEEK_SET, feof
 from libc.stdlib cimport malloc, free
 from libc.string cimport memcpy
 cimport cython
@@ -84,23 +84,32 @@ cdef:
         DataFormat.uint08 : 1,
     }
 
+class SEGYTruncatedError(IOError):
+    """The file ended in the middle of a trace."""
+
+
+cdef dict _DTYPE_STRING_MAP = {
+    'f32': DataFormat.float32_ieee,
+    'f64': DataFormat.float64_ieee,
+    'ibmf32': DataFormat.float32_ibm,
+    'fixed32': DataFormat.fixed32,
+    'i08': DataFormat.int08,
+    'i16': DataFormat.int16,
+    'i24': DataFormat.int24,
+    'i32': DataFormat.int32,
+    'i64': DataFormat.int64,
+    'u08': DataFormat.uint08,
+    'ui16': DataFormat.uint16,
+    'ui24': DataFormat.uint24,
+    'ui32': DataFormat.uint32,
+    'ui64': DataFormat.uint64,
+}
+
 cdef DataFormat str_to_data_format(str dtype_string):
-    match dtype_string:
-        case 'f32': return DataFormat.float32_ieee
-        case 'f64' : return  DataFormat.float64_ieee
-        case 'ibmf32': return  DataFormat.float32_ibm
-        case 'fixed32': return  DataFormat.fixed32
-        case 'i08': return  DataFormat.int08
-        case 'i16': return  DataFormat.int16
-        case 'i24': return  DataFormat.int24
-        case 'i32': return  DataFormat.int32
-        case 'i64': return  DataFormat.int64
-        case 'u08': return  DataFormat.uint08
-        case 'ui16': return  DataFormat.uint16
-        case 'ui24': return  DataFormat.uint24
-        case 'ui32': return  DataFormat.uint32
-        case 'ui64': return  DataFormat.uint64
-        case _: raise ValueError(f"Unrecognized dtype_string: {dtype_string}")
+    try:
+        return _DTYPE_STRING_MAP[dtype_string]
+    except KeyError:
+        raise ValueError(f"Unrecognized dtype_string: {dtype_string}")
 
 @cython.boundscheck(False)
 cdef void ibm_to_float(uint8_t *inp, size_t n_items) noexcept nogil:
@@ -353,14 +362,17 @@ cdef class SEGYTrace:
             char * trc_name = b'SEG00000'
             char * ext_name = b'SEG00001'
             size_t n_bytes = spy_hdr.n_sample * sizeof(f4)
-        segy.data = <uint8_t[:n_bytes]> malloc(n_bytes)
+        segy.data = np.empty(n_bytes, dtype=np.uint8)
+        segy._dtype = DataFormat.float32_ieee
+        segy._itemsize = sizeof(f4)
         with nogil:
             segy.n_ext_hdr = 1
 
             ext_hdr.nsamps = spy_hdr.n_sample
             if spy_hdr.n_sample <= UINT16_MAX:
                 hdr.nsamps = spy_hdr.n_sample
-            memcpy(&segy.data[0], &spy_tr.data[0], n_bytes)
+            if n_bytes > 0:
+                memcpy(&segy.data[0], &spy_tr.data[0], n_bytes)
 
             ext_hdr.dt = spy_hdr.d_sample * 1_000_000.0 # in micro seconds
 
@@ -407,6 +419,8 @@ cdef class SEGYTrace:
             hdr.header_name = trc_name
             ext_hdr.header_name = ext_name
 
+        return segy
+
     cdef spyc.Trace to_spy_trace(self):
         cdef:
             spyc.Trace spy_tr = spyc.Trace.__new__(spyc.Trace)
@@ -418,12 +432,19 @@ cdef class SEGYTrace:
 
         cdef size_t nsamps = self.ext_hdr.nsamps
 
-        spy_tr.data = <float[:nsamps]> malloc(sizeof(float) * nsamps)
+        spy_tr.data = spyc.alloc_data(nsamps)
+
+        cdef:
+            bint supported = True
+            double xy_scale = 1.0
+            double z_scale = 1.0
 
         with nogil:
             spy_hdr.n_sample = self.ext_hdr.nsamps
 
-            if self._dtype == DataFormat.int08:
+            if nsamps == 0:
+                pass
+            elif self._dtype == DataFormat.int08:
                 convert_to_float(<i1 *> &self.data[0], &spy_tr.data[0], nsamps)
             elif self._dtype == DataFormat.int16:
                 convert_to_float(<i2 *> &self.data[0], &spy_tr.data[0], nsamps)
@@ -446,8 +467,8 @@ cdef class SEGYTrace:
             else:
                 # ibm float4 conversion should've already been handled on read in.
                 # 3 byte integers should have also been converted to 4 byte integers
-                # as well.
-                pass
+                # as well, so this is a format we really do not know how to convert.
+                supported = False
 
             if self.hdr.tm_scal > 0:
                 spy_hdr.sample_start = (<double> self.hdr.delay) * self.hdr.tm_scal
@@ -473,28 +494,45 @@ cdef class SEGYTrace:
                 spy_hdr.trace_id = self.ext_hdr.linetrc
                 spy_hdr.ensemble_number = self.ext_hdr.cdp
             else:
+                # positive scalars multiply and negative ones divide, 0 is the same as 1.
+                if self.hdr.co_scal > 0:
+                    xy_scale = self.hdr.co_scal
+                elif self.hdr.co_scal < 0:
+                    xy_scale = 1.0 / -self.hdr.co_scal
+                if self.hdr.ed_scal > 0:
+                    z_scale = self.hdr.ed_scal
+                elif self.hdr.ed_scal < 0:
+                    z_scale = 1.0 / -self.hdr.ed_scal
+
                 spy_hdr.d_sample = self.hdr.dt / 1_000_000.0
                 spy_hdr.offset = self.hdr.offset
 
-                spy_hdr.tx_loc[0] = self.hdr.sht_x
-                spy_hdr.tx_loc[1] = self.hdr.sht_y
-                spy_hdr.tx_loc[2] = self.hdr.selev
+                spy_hdr.tx_loc[0] = self.hdr.sht_x * xy_scale
+                spy_hdr.tx_loc[1] = self.hdr.sht_y * xy_scale
+                spy_hdr.tx_loc[2] = self.hdr.selev * z_scale
 
-                spy_hdr.rx_loc[0] = self.hdr.rec_x
-                spy_hdr.rx_loc[1] = self.hdr.rec_y
-                spy_hdr.rx_loc[2] = self.hdr.relev
+                spy_hdr.rx_loc[0] = self.hdr.rec_x * xy_scale
+                spy_hdr.rx_loc[1] = self.hdr.rec_y * xy_scale
+                spy_hdr.rx_loc[2] = self.hdr.relev * z_scale
 
-                spy_hdr.mid_point[0] = self.hdr.cdp_x
-                spy_hdr.mid_point[1] = self.hdr.cdp_y
+                spy_hdr.mid_point[0] = self.hdr.cdp_x * xy_scale
+                spy_hdr.mid_point[1] = self.hdr.cdp_y * xy_scale
 
                 spy_hdr.trace_id = self.hdr.linetrc
                 spy_hdr.ensemble_number = self.hdr.cdp
+
+            if spy_hdr.d_sample == 0:
+                # (an extended header can leave this blank)
+                spy_hdr.d_sample = self.hdr.dt / 1_000_000.0
 
             spy_hdr.mid_point[2] = 0.5 * (spy_hdr.tx_loc[2] + spy_hdr.rx_loc[2])
 
             # hdr.trctype = spy_hdr.line_id
             spy_hdr.line_id = self.hdr.chan
             spy_hdr.ensemble_trace_number = self.hdr.cdptrc - 1
+
+        if not supported:
+            raise ValueError(f"Unable to convert SEG-Y data format {self._dtype} to floating point.")
 
         return spy_tr
 
@@ -508,9 +546,26 @@ cdef class SEGYTrace:
         if n_write != TRC_HDR_SIZE:
             raise IOError("Error writing trace header to file.")
 
-        n_write = fwrite(&self.data[0], sizeof(data_format_sizes[self._dtype]), self.data.shape[0], fd)
-        if n_write != self.data.shape[0]:
-            raise IOError("Error writing trace data to file.")
+        # `data` is a plain buffer of bytes (already in the file's data format), so write it as bytes.
+        cdef size_t n_bytes = self.data.shape[0]
+        if n_bytes > 0:
+            n_write = fwrite(&self.data[0], 1, n_bytes, fd)
+            if n_write != n_bytes:
+                raise IOError("Error writing trace data to file.")
+
+    @staticmethod
+    def from_seispy(spyc.Trace trace):
+        """Convert a seispy Trace to a SEG-Y trace (float32 samples)."""
+        return SEGYTrace.from_spy_trace(trace)
+
+    def write(self, file):
+        """Write this trace (trace header, extended trace header, then the data) to a binary file object."""
+        cdef spy_io.DupResult res = spy_io.PyFile_Dup(file, "wb")
+        try:
+            self.to_file_descriptor(res.handle)
+        finally:
+            spy_io.PyFile_DupClose(file, res.handle, res.offset)
+        file.flush()
 
     def __getitem__(self, item):
         return np.asarray(self)[item]
@@ -535,28 +590,37 @@ cdef class SEGYTrace:
             endian_flag = "<>"
         n_read = spy_io.read_struct_from_file(&tr.hdr, _th_info, STDH_IS_PACKED, TRC_HDR_BYTES, fd, endian_flag)
         if n_read != TRC_HDR_BYTES:
-            if feof(fd):
-                raise EOFError("Reached the end of the file while reading header.")
+            if n_read == 0 and feof(fd):
+                # a clean end of the file, in between traces.
+                raise EOFError("Reached the end of the file.")
+            elif feof(fd):
+                raise SEGYTruncatedError("The file ended in the middle of a trace header.")
             else:
-                raise EOFError("Error reading trace header from file.")
+                raise IOError("Error reading trace header from file.")
 
         if bhdr.is_fixed_traces:
             tr.hdr.nsamps = bhdr.n_sample_per_trace
             tr.hdr.dt = bhdr.d_sample
             tr.ext_hdr.nsamps = bhdr.next_sample_per_trace
             tr.ext_hdr.dt = bhdr.dext_sample
+        # otherwise the trace header values are used, unless they are left blank.
+        if tr.hdr.nsamps == 0:
+            tr.hdr.nsamps = bhdr.n_sample_per_trace
+        if tr.hdr.dt == 0:
+            tr.hdr.dt = bhdr.d_sample
         cdef size_t nsamps = tr.hdr.nsamps
         if bhdr.nmax_ext_trc_hdr>0:
-            n_read = spy_io.read_struct_from_file(&tr.hdr, _eh_info, EXTH_IS_PACKED, TRC_HDR_BYTES, fd, endian_flag)
+            n_read = spy_io.read_struct_from_file(&tr.ext_hdr, _eh_info, EXTH_IS_PACKED, TRC_HDR_BYTES, fd, endian_flag)
             if n_read != TRC_HDR_BYTES:
                 if feof(fd):
-                    raise EOFError("Reached the end of the file while reading extended header.")
+                    raise SEGYTruncatedError("The file ended in the middle of an extended trace header.")
                 else:
                     raise IOError("Error reading extended trace header from file.")
 
             n_ext_headers = tr.ext_hdr.n_exttrchdr
             if n_ext_headers == 0:
                 n_ext_headers = bhdr.nmax_ext_trc_hdr
+            tr.n_ext_hdr = n_ext_headers
 
             if tr.ext_hdr.nsamps > 0:
                 nsamps = tr.ext_hdr.nsamps
@@ -575,9 +639,9 @@ cdef class SEGYTrace:
 
         if n_data_bytes > 0:
             if tr._itemsize == 3:
-                tr.data = <uint8_t[:nsamps * 4]> malloc(nsamps * 4)
+                tr.data = np.empty(nsamps * 4, dtype=np.uint8)
             else:
-                tr.data = <uint8_t[:n_data_bytes]> malloc(n_data_bytes)
+                tr.data = np.empty(n_data_bytes, dtype=np.uint8)
         else:
             tr.data = np.empty((0,), dtype=np.uint8)
         if nsamps > 0:
@@ -585,7 +649,7 @@ cdef class SEGYTrace:
             n_read = fread(&tr.data[0], 1, n_data_bytes, fd)
             if n_read != n_data_bytes:
                 if feof(fd):
-                    raise EOFError("Reached the end of the file while reading data.")
+                    raise SEGYTruncatedError("The file ended in the middle of a trace's data.")
                 else:
                     raise IOError("Error reading trace data from file.")
             if tr._itemsize == 3:
@@ -677,6 +741,16 @@ cdef class SEGYTrace:
         free(buffer.shape)
         free(buffer.strides)
 
+_SEGY_SORT_TO_SPY_ENSEMBLE = {
+    TraceSorting.unknown : spyc.EnsembleType.unknown,
+    TraceSorting.none : spyc.EnsembleType.unsorted,
+    TraceSorting.cdp : spyc.EnsembleType.common_midpoint,
+    TraceSorting.midpoint : spyc.EnsembleType.common_midpoint,
+    TraceSorting.source : spyc.EnsembleType.tx_gather,
+    TraceSorting.receiver : spyc.EnsembleType.rx_gather,
+    TraceSorting.offset : spyc.EnsembleType.common_offset,
+}
+
 _SEGY_SORT_SPY_SORT = {
     spyc.EnsembleType.unknown : TraceSorting.unknown,
     spyc.EnsembleType.unsorted : TraceSorting.none,
@@ -698,7 +772,11 @@ cdef class SEGYCollection:
         self.text_header = None
         self.extra_text_headers = []
 
-    def to_collection(self):
+    def traces(self):
+        """A one-pass iterator of seispy Traces, converted from this file's traces.
+
+        Call it again to read the file again.
+        """
         return _FileSEGYToTraceIterator(self)
 
     def __iter__(self):
@@ -805,7 +883,7 @@ cdef class SEGYCollection:
         if coll.hdr.major_rev < 2:
             coll.hdr.nmax_ext_trc_hdr = 0
             if data_format is not None:
-                coll.hrd.data_format = str_to_data_format(data_format)
+                coll.hdr.data_format = str_to_data_format(data_format)
             elif coll.hdr.data_format == 0:
                 coll.hdr.data_format = DataFormat.float32_ibm
 
@@ -826,6 +904,8 @@ cdef class SEGYCollection:
             ctx = open(filename, "rb")
 
         with ctx as f:
+            # an open file is taken to be a whole SEG-Y file, wherever it was left.
+            f.seek(0)
             text_header_bytes = f.read(TXT_HDR_BYTES)
             coll = SEGYCollection.from_header_bytes(
                 f.read(BIN_HDR_BYTES),
@@ -902,12 +982,42 @@ cdef str _decode_text(bytes text):
         return text.decode('EBCDIC-CP-BE')
 
 
+def _warn_if_short(size_t n_read, size_t n_expected):
+    if n_expected > 0 and n_read < n_expected:
+        warnings.warn(
+            f"The SEG-Y file ended after {n_read} traces, but its binary header says it holds {n_expected}.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+
+def read_segy(filename, endian=None, data_format=None, fixed_traces=None):
+    """Read a SEG-Y file as a stream of seispy Traces, ready to be piped into stages::
+
+        read_segy("shots.segy") | bfilt(...)
+
+    Parameters
+    ----------
+    filename : path or binary file object
+    endian, data_format, fixed_traces
+        Overrides for files that do not identify themselves properly, see `SEGYCollection.from_file`.
+
+    Returns
+    -------
+    A trace iterator. It can only be used once, call `read_segy` again to re-read the file.
+    """
+    return SEGYCollection.from_file(
+        filename, endian=endian, data_format=data_format, fixed_traces=fixed_traces
+    ).traces()
+
+
 cdef class _FileSEGYIterator:
     cdef:
         FILE *fd
         bint owner
         object file
         spy_io.spy_off_t orig_pos
+        binary_header bhdr_local  # my own copy, so I never depend on the collection staying alive
         binary_header *bhdr
         str endian_flag
         size_t i
@@ -918,7 +1028,7 @@ cdef class _FileSEGYIterator:
         self.file = None
         self.i = 0
 
-    def __dealoc__(self):
+    def __dealloc__(self):
         # make sure I get closed up when I'm garbage collected
         self._close_file()
 
@@ -942,7 +1052,8 @@ cdef class _FileSEGYIterator:
         else:
             self.owner = False
         self.file = file
-        self.bhdr = &coll.hdr
+        self.bhdr_local = coll.hdr
+        self.bhdr = &self.bhdr_local
         if coll.hdr.byte_order_id == SEGY_BIG_ENDIAN_FLAG:
             self.endian_flag = ">"
         elif coll.hdr.byte_order_id == SEGY_LITTLE_ENDIAN_FLAG:
@@ -959,25 +1070,26 @@ cdef class _FileSEGYIterator:
             res = spy_io.PyFile_Dup(file, "rb")
             self.fd = res.handle
             self.orig_pos = res.offset
-            if self.owner:
-                if coll.hdr.major_rev >= 2 and coll.hdr.first_trace_byte_offset != 0:
-                    trace_start = coll.hdr.first_trace_byte_offset
-                else:
-                    trace_start = (coll.hdr.next_txt_hdr + 1) * TXT_HDR_BYTES + BIN_HDR_BYTES
-                # Advance fd to the start of the traces since I opened it:
-                spy_io.spy_fseek(self.fd, trace_start, SEEK_CUR)
+            if coll.hdr.major_rev >= 2 and coll.hdr.first_trace_byte_offset != 0:
+                trace_start = coll.hdr.first_trace_byte_offset
+            else:
+                trace_start = (coll.hdr.next_txt_hdr + 1) * TXT_HDR_BYTES + BIN_HDR_BYTES
+            # Go to the start of the traces. This is absolute so that it works for file objects
+            # that were already read from, or are being read a second time.
+            spy_io.spy_fseek(self.fd, trace_start, SEEK_SET)
         except Exception as err:
             self._close_file()
             raise err
 
     cdef SEGYTrace next_trace(self):
-        if self.i == SIZE_MAX or (self.bhdr.n_traces > 0 and self.i == self.bhdr.n_traces):
+        if self.fd is NULL or self.i == SIZE_MAX or (self.bhdr.n_traces > 0 and self.i == self.bhdr.n_traces):
             raise StopIteration()
         cdef:
             SEGYTrace trace_in
         try:
             trace_in = SEGYTrace.from_file_descriptor(self.fd, self.bhdr)
-        except EOFError as err:
+        except EOFError:
+            _warn_if_short(self.i, self.bhdr.n_traces)
             self.bhdr.n_traces = self.i
             self._close_file()
             raise StopIteration()
@@ -985,8 +1097,7 @@ cdef class _FileSEGYIterator:
             # if something else goes wrong reading in from the file descriptor
             # close myself and re-raise the error.
             self._close_file()
-            print("I errored reading from the file", err)
-            raise err
+            raise
         if trace_in.ext_hdr.last_trc == LastID.in_file:
             # set i as SIZE_MAX to trigger ending on the next request.
             self.bhdr.n_traces = self.i + 1
@@ -1009,6 +1120,7 @@ cdef class _FileSEGYToTraceIterator(spyc.BaseTraceIterator):
         bint owner
         object file
         spy_io.spy_off_t orig_pos
+        binary_header bhdr_local  # my own copy, so I never depend on the collection staying alive
         binary_header *bhdr
         str endian_flag
 
@@ -1018,7 +1130,7 @@ cdef class _FileSEGYToTraceIterator(spyc.BaseTraceIterator):
         self.file = None
         self.hdr.n_traces = 0
 
-    def __dealoc__(self):
+    def __dealloc__(self):
         # make sure I get closed up when I'm garbage collected
         self._close_file()
 
@@ -1042,7 +1154,8 @@ cdef class _FileSEGYToTraceIterator(spyc.BaseTraceIterator):
         else:
             self.owner = False
         self.file = file
-        self.bhdr = &coll.hdr
+        self.bhdr_local = coll.hdr
+        self.bhdr = &self.bhdr_local
         if coll.hdr.byte_order_id == SEGY_BIG_ENDIAN_FLAG:
             self.endian_flag = ">"
         elif coll.hdr.byte_order_id == SEGY_LITTLE_ENDIAN_FLAG:
@@ -1053,6 +1166,8 @@ cdef class _FileSEGYToTraceIterator(spyc.BaseTraceIterator):
             raise ValueError("Unknown File Endian.")
 
         self.hdr.n_traces = self.bhdr.n_traces
+        self.hdr.uniform_traces = self.bhdr.is_fixed_traces
+        self.hdr.ensemble_type = _SEGY_SORT_TO_SPY_ENSEMBLE.get(self.bhdr.sort_method, spyc.EnsembleType.unknown)
 
         cdef spyc.spy_off_t trace_start
         cdef spy_io.DupResult res
@@ -1061,26 +1176,26 @@ cdef class _FileSEGYToTraceIterator(spyc.BaseTraceIterator):
             res = spy_io.PyFile_Dup(file, "rb")
             self.fd = res.handle
             self.orig_pos = res.offset
-            if self.owner:
-                if coll.hdr.major_rev >= 2 and coll.hdr.first_trace_byte_offset != 0:
-                    trace_start = coll.hdr.first_trace_byte_offset
-                else:
-                    trace_start = (coll.hdr.next_txt_hdr + 1) * TXT_HDR_BYTES + BIN_HDR_BYTES
-                # Advance fd to the start of the traces since I opened it:
-                spy_io.spy_fseek(self.fd, trace_start, SEEK_CUR)
+            if coll.hdr.major_rev >= 2 and coll.hdr.first_trace_byte_offset != 0:
+                trace_start = coll.hdr.first_trace_byte_offset
+            else:
+                trace_start = (coll.hdr.next_txt_hdr + 1) * TXT_HDR_BYTES + BIN_HDR_BYTES
+            # Go to the start of the traces. This is absolute so that it works for file objects
+            # that were already read from, or are being read a second time.
+            spy_io.spy_fseek(self.fd, trace_start, SEEK_SET)
         except Exception as err:
             self._close_file()
             raise err
 
     cdef spyc.Trace next_trace(self):
-        if self.i == SIZE_MAX or (self.hdr.n_traces > 0 and self.i == self.hdr.n_traces):
+        if self.fd is NULL or self.i == SIZE_MAX or (self.hdr.n_traces > 0 and self.i == self.hdr.n_traces):
             raise StopIteration()
         cdef:
             SEGYTrace trace_in
         try:
             trace_in = SEGYTrace.from_file_descriptor(self.fd, self.bhdr)
-        except EOFError as err:
-            print("Reached End of File:", print(err))
+        except EOFError:
+            _warn_if_short(self.i, self.hdr.n_traces)
             self.hdr.n_traces = self.i
             self._close_file()
             raise StopIteration()
@@ -1088,8 +1203,7 @@ cdef class _FileSEGYToTraceIterator(spyc.BaseTraceIterator):
             # if something else goes wrong reading in from the file descriptor
             # close myself and re-raise the error.
             self._close_file()
-            print("I errored reading from the file", err)
-            raise err
+            raise
         if trace_in.ext_hdr.last_trc == LastID.in_file:
             # set i as SIZE_MAX to trigger ending on the next request.
             self.hdr.n_traces = self.i + 1

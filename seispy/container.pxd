@@ -30,6 +30,10 @@ cdef:
 cdef spy_trace_header* new_hdr(size_t n_sample=?) nogil
 cdef spy_trace_header* copy_of_hdr(spy_trace_header *hdr_in) nogil
 
+# Garbage collector managed buffers (the memory is owned by the returned view's base object).
+cdef float[::1] alloc_data(size_t n_sample)
+cdef unsigned char[::1] alloc_bytes(size_t n_bytes)
+
 @cython.final
 cdef class Trace:
     cdef:
@@ -88,3 +92,6 @@ cdef class BaseTraceIterator:
         CollectionHeader hdr
 
     cdef Trace next_trace(self)
+
+# Coerce a TraceCollection, trace iterator, or any iterable of Trace into a BaseTraceIterator
+cpdef BaseTraceIterator as_trace_iterator(object obj)

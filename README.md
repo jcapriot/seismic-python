@@ -38,7 +38,7 @@ streams to a file.
 
 E.G.
 ```bash
-suplane | subfilt > out.su
+plane | bfilt > out.su
 ```
 
 
@@ -105,4 +105,35 @@ in seismic unix to `meson` helped to ensure proper linkage within the project.
 Currently, the base `cwp`, `par` and `su` libraries are built and linked into the python package.
 
 A little bit more subtleties here is that I'm using cython iterators to do the above operations, with
-the intention of releasing the GIL when inside calls to enable threading. 
+the intention of releasing the GIL when inside calls to enable threading.
+
+
+## Pipes and parallelism
+Processing steps can be written as input-less *stages* and chained with `|`, just like the shell:
+
+```python
+from seispy.synthetics import spike
+from seispy.filters import bfilt
+
+traces = spike() | bfilt(f_pass_low=10.0, f_stop_low=5.0) | bfilt(zerophase=False)
+```
+
+Any iterable of `Trace` objects (e.g. your own generator) can be the left hand side of a pipe.
+
+In a unix pipe every program runs at the same time, and `xargs -P` runs one program on several pieces of data at once.
+`seispy.parallel` provides both, using only the standard library:
+
+```python
+from seispy.parallel import prefetch, pmap
+
+# pipeline parallelism: each side of a `prefetch()` runs in its own thread, with a bounded buffer between them
+spike() | bfilt(...) | prefetch() | bfilt(...)
+
+# data parallelism: several workers on different chunks of the stream, results come back in order
+spike() | pmap(bfilt(...) | bfilt(...), workers=8, chunk=16)
+```
+
+Stages declare how finely they can be split: `parallelism='trace'` (cut anywhere), `'ensemble'` (cut only between
+gathers, give `pmap` a `key=` header name), or `'serial'` (the default; `pmap` refuses it). Threads give a speedup
+for stages that release the GIL (the SU filter kernels do), otherwise use `executor='process'`.
+See `examples/parallel_benchmark.py`.

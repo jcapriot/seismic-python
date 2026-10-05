@@ -4,7 +4,6 @@
 from .. cimport container as spyc
 from .. cimport su
 from libc.math cimport sqrt
-from libc.stdlib cimport malloc
 
 cdef class butterworth_bandpass(spyc.BaseTraceIterator):
     cdef:
@@ -28,9 +27,7 @@ cdef class butterworth_bandpass(spyc.BaseTraceIterator):
         bint zerophase=True, bint inplace=False
     ):
         self.last_dt = 0
-        if isinstance(trace_iter, spyc.TraceCollection):
-            trace_iter = trace_iter.__iter__()
-        self.iter_in = trace_iter
+        self.iter_in = spyc.as_trace_iterator(trace_iter)
         self.hdr = self.iter_in.hdr
         self.zerophase = zerophase
         self.low_cut = low_cut
@@ -84,7 +81,7 @@ cdef class butterworth_bandpass(spyc.BaseTraceIterator):
         else:
             self.fstophi = f_stop_high
 
-    cdef void set_filter_params(self, spyc.spy_trace_header *hdr):
+    cdef void set_filter_params(self, spyc.spy_trace_header *hdr) noexcept nogil:
         cdef float fstoplo, fstophi, fpasslo, fpasshi
         if hdr.d_sample != self.last_dt:
             self.last_dt = hdr.d_sample
@@ -124,22 +121,28 @@ cdef class butterworth_bandpass(spyc.BaseTraceIterator):
     cdef spyc.Trace next_trace(self):
         cdef:
             spyc.Trace trace = self.iter_in.next_trace()
-            size_t n_sample = trace.data.shape[0]
-        self.set_filter_params(trace.hdr)
-
-        cdef:
+            spyc.spy_trace_header *hdr_in = trace.hdr
+            float[::1] data_in = trace.data
+            size_t n_sample = data_in.shape[0]
             float[::1] data
+
         if self.inplace:
-            data = trace.data
+            data = data_in
         else:
-            data = <float[:n_sample]> malloc(n_sample * sizeof(float))
-            data[:] = trace.data[:]
+            data = spyc.alloc_data(n_sample)
 
-        if self.low_cut:
-            su.su_bfhighpass(self.zerophase, self.npoleslo, self.f3dblo, n_sample, &data[0], &data[0])
+        # The SU filter kernels only touch their arguments (no static or global state),
+        # so they are safe to run concurrently from several threads.
+        with nogil:
+            self.set_filter_params(hdr_in)
+            if not self.inplace:
+                data[:] = data_in[:]
 
-        if self.high_cut:
-            su.su_bflowpass(self.zerophase, self.npoleshi, self.f3dbhi, n_sample, &data[0], &data[0])
+            if self.low_cut:
+                su.su_bfhighpass(self.zerophase, self.npoleslo, self.f3dblo, n_sample, &data[0], &data[0])
+
+            if self.high_cut:
+                su.su_bflowpass(self.zerophase, self.npoleshi, self.f3dbhi, n_sample, &data[0], &data[0])
 
         cdef spyc.spy_trace_header *hdr = spyc.copy_of_hdr(trace.hdr)
         return spyc.Trace.from_trace(hdr, data, True)
