@@ -22,7 +22,7 @@ Every stage also declares how finely its work can be split up (``parallelism``):
 """
 import functools
 
-from .container import as_trace_iterator, from_iterable
+from .container import as_trace_iterator, from_iterable, join_complex, split_complex
 
 __all__ = ["Stage", "Pipeline", "stage", "per_trace", "header_value", "PARALLELISM_LEVELS"]
 
@@ -123,10 +123,42 @@ def header_value(trace, key):
     return float(trace.header[key])
 
 
-def per_trace(upstream, func):
+_COMPLEX_MODES = ("reject", "native", "linear")
+
+
+def per_trace(upstream, func, *, on_complex="reject"):
     """Apply ``func(trace) -> trace`` to every trace of ``upstream``, for stages that are written in python.
 
     The number of traces is kept (if it is known).
+
+    ``on_complex`` says what is to be done with a complex trace, which each stage has to decide from what it does:
+
+    ``'native'``
+        ``func`` copes with complex samples itself (anything that is defined for complex numbers: scaling, adding,
+        moving, windowing, ...).
+    ``'linear'``
+        ``func`` is a linear operation with real coefficients, like a filter. It is applied to the real part and to
+        the imaginary part, which is the same as applying it to the complex trace.
+    ``'reject'``
+        ``func`` does not make sense for complex samples (it needs an order, a sign, a median, a real spectrum, ...),
+        which is a TypeError.
     """
+    if on_complex not in _COMPLEX_MODES:
+        raise ValueError(f"on_complex must be one of {_COMPLEX_MODES}")
     source = as_trace_iterator(upstream)
-    return from_iterable((func(trace) for trace in source), n_traces=source.n_traces)
+
+    if on_complex == "native":
+        apply = func
+    elif on_complex == "linear":
+        def apply(trace):
+            if trace.dtype.kind != "c":
+                return func(trace)
+            real, imag = split_complex(trace)
+            return join_complex(func(real), func(imag))
+    else:
+        def apply(trace):
+            if trace.dtype.kind == "c":
+                raise TypeError("This stage works on real traces, but was given a complex one.")
+            return func(trace)
+
+    return from_iterable((apply(trace) for trace in source), n_traces=source.n_traces)

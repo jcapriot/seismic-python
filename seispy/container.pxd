@@ -6,8 +6,12 @@ from ._cy_enums cimport EnsembleType, SamplingDomain, SamplingUnit
 cdef extern from *:
     """
     #define SPY_UNKNOWN 0
+    #define SPY_FLOAT32 0
+    #define SPY_COMPLEX64 1
     """
     int SPY_UNKNOWN
+    int SPY_FLOAT32      # (data_type) real samples, 1 float each
+    int SPY_COMPLEX64    # (data_type) complex samples, 2 floats each (real then imaginary)
 
 cdef:
     struct spy_trace_header:
@@ -24,11 +28,16 @@ cdef:
         size_t ensemble_trace_number    # trace ID within ensemble
         int sampling_unit               # 0 = s, 1  = meters
         int sampling_domain             # 0 (sample unit domain), 1 = sample_unit fourier domain
+        int data_type                   # SPY_FLOAT32 or SPY_COMPLEX64. n_sample counts samples (not floats)
 
     size_t SPY_TRC_HDR_SIZE
 
 cdef spy_trace_header* new_hdr(size_t n_sample=?) nogil
 cdef spy_trace_header* copy_of_hdr(spy_trace_header *hdr_in) nogil
+
+# the number of floats that make up one sample
+cdef inline size_t floats_per_sample(int data_type) noexcept nogil:
+    return 2 if data_type == SPY_COMPLEX64 else 1
 
 # Garbage collector managed buffers (the memory is owned by the returned view's base object).
 cdef float[::1] alloc_data(size_t n_sample)
@@ -52,6 +61,9 @@ cdef class Trace:
     cdef Trace from_bytes(const unsigned char[::1] bys)
     cpdef unsigned char[::1] as_bytes(self)
 
+
+# raises a TypeError if the trace is complex (for code that only works on real samples)
+cdef int require_real(Trace tr) except -1
 
 cdef class CollectionHeader:
     cdef:

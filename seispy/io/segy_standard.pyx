@@ -362,6 +362,7 @@ cdef class SEGYTrace:
             char * trc_name = b'SEG00000'
             char * ext_name = b'SEG00001'
             size_t n_bytes = spy_hdr.n_sample * sizeof(f4)
+        spyc.require_real(spy_tr)  # (SEG-Y has no complex traces)
         segy.data = np.empty(n_bytes, dtype=np.uint8)
         segy._dtype = DataFormat.float32_ieee
         segy._itemsize = sizeof(f4)

@@ -29,6 +29,8 @@ def _signed_log(x, log):
 # ------------------------------------------------------------------------------------------------------ pointwise
 
 def op_abs(x, dt, nw):
+    if np.iscomplexobj(x):
+        return np.abs(x)  # the modulus, a real trace
     np.abs(x, out=x)
 
 
@@ -69,6 +71,8 @@ def op_slog10(x, dt, nw):
 
 
 def op_db(x, dt, nw):
+    if np.iscomplexobj(x):
+        return F32(20) * _signed_log(np.abs(x), np.log10)  # of the modulus, a real trace
     x[:] = F32(20) * _signed_log(x, np.log10)
 
 
@@ -139,7 +143,11 @@ def op_d2m(x, dt, nw):
 
 
 def op_cnorm(x, dt, nw):
-    # normalize complex samples (pairs of numbers) by their modulus
+    # normalize complex samples (pairs of numbers, or the samples of a complex trace) by their modulus
+    if np.iscomplexobj(x):
+        with np.errstate(divide='ignore', invalid='ignore'):
+            x /= np.abs(x)
+        return
     pairs = x[:x.shape[0] // 2 * 2].reshape(-1, 2)
     with np.errstate(divide='ignore', invalid='ignore'):
         pairs /= np.hypot(pairs[:, 0], pairs[:, 1])[:, None]
@@ -158,7 +166,7 @@ def op_avg(x, dt, nw):
 
 
 def op_rmsamp(x, dt, nw):
-    rms = np.sqrt(np.mean(x * x))
+    rms = np.sqrt(np.mean(np.abs(x) ** 2))
     x[:] = 0
     x[0] = rms
 
@@ -246,20 +254,21 @@ def _window_op(x, nw, stat):
     """
     n = x.shape[0]
     half = (nw - 1) // 2
-    t = x.copy()
-    x[:] = 0
+    # (the statistic of complex samples can be real, which makes the trace real)
+    out = np.zeros(n, dtype=stat(np.zeros((1, nw), dtype=x.dtype)).dtype)
     if n > nw:
-        windows = sliding_window_view(t, nw)[1:]
-        x[half + 1:n - half] = stat(windows)
+        windows = sliding_window_view(x, nw)[1:]
+        out[half + 1:n - half] = stat(windows)
+    return out
 
 
 def op_mean(x, dt, nw):
-    _window_op(x, nw, lambda w: w.mean(axis=1))
+    return _window_op(x, nw, lambda w: w.mean(axis=1))
 
 
 def op_std(x, dt, nw):
-    _window_op(x, nw, lambda w: w.std(axis=1))
+    return _window_op(x, nw, lambda w: w.std(axis=1))
 
 
 def op_var(x, dt, nw):
-    _window_op(x, nw, lambda w: w.var(axis=1))
+    return _window_op(x, nw, lambda w: w.var(axis=1))

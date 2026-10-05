@@ -6,6 +6,10 @@ subdir('operations')
 subdir('tapering')
 subdir('windowing')
 subdir('stretching')
+subdir('transforms')
+subdir('convolution')
+subdir('attributes')
+subdir('decon')
 subdir('synthetics')
 
 python_sources = [

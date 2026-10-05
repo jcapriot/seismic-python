@@ -2,6 +2,7 @@
 # cython: linetrace=True
 
 from .. cimport container as spyc
+from ..container import join_complex, split_complex
 from .. cimport su
 from libc.math cimport sqrt
 
@@ -119,8 +120,15 @@ cdef class butterworth_bandpass(spyc.BaseTraceIterator):
                     self.f3dbhi = self.f3dbhi_in * hdr.d_sample
 
     cdef spyc.Trace next_trace(self):
+        cdef spyc.Trace trace = self.iter_in.next_trace()
+        if trace.hdr.data_type == spyc.SPY_COMPLEX64:
+            # a filter with real coefficients, so the same filter on the real and on the imaginary part
+            real, imag = split_complex(trace)
+            return join_complex(self._filter(real), self._filter(imag))
+        return self._filter(trace)
+
+    cdef spyc.Trace _filter(self, spyc.Trace trace):
         cdef:
-            spyc.Trace trace = self.iter_in.next_trace()
             spyc.spy_trace_header *hdr_in = trace.hdr
             float[::1] data_in = trace.data
             size_t n_sample = data_in.shape[0]

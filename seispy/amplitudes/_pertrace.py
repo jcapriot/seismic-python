@@ -28,7 +28,7 @@ def _zero(upstream, itmax, *, itmin=0, value=0.0):
         x[itmin:itmax + 1] = value
         return trace.replace(x)
 
-    return per_trace(upstream, zero_trace)
+    return per_trace(upstream, zero_trace, on_complex='native')
 
 
 # SUZERO: zero-out (or set constant) data within a time window
@@ -67,7 +67,7 @@ def _nan(upstream, *, value=0.0, interp=False):
         _fix_nans(x, value, interp)
         return trace.replace(x)
 
-    return per_trace(upstream, nan_trace)
+    return per_trace(upstream, nan_trace, on_complex='native')
 
 
 # SUNAN: remove NaNs and Infs
@@ -83,7 +83,7 @@ nan = stage(_nan, parallelism='trace', name='nan', validate=True)
 
 # ------------------------------------------------------------------------------------------------------- normalize
 def _norm_rms(w):
-    return np.sqrt(np.mean(w.astype(np.float64) ** 2))
+    return np.sqrt(np.mean(np.abs(w).astype(np.float64) ** 2))
 
 
 def _norm_max(w):
@@ -91,6 +91,8 @@ def _norm_max(w):
 
 
 def _norm_median(w):
+    if np.iscomplexobj(w):
+        raise TypeError("The median of complex samples is not defined.")
     return np.median(w)
 
 
@@ -127,7 +129,7 @@ def _normalize(upstream, norm='rms', *, t0=0.0, t1=None, dt=None):
             x -= level
         return trace.replace(x)
 
-    return per_trace(upstream, normalize_trace)
+    return per_trace(upstream, normalize_trace, on_complex='native')
 
 
 # SUNORMALIZE: trace normalization by rms, max, or median, or median balancing
@@ -160,7 +162,7 @@ def _weight(upstream, *, key='offset', a=1.0, b=0.0005, key2=None, scale=0.0001,
                 x *= factor
         return trace.replace(x)
 
-    return per_trace(upstream, weight_trace)
+    return per_trace(upstream, weight_trace, on_complex='native')
 
 
 # SUWEIGHT: weight traces by a header value, such as the offset

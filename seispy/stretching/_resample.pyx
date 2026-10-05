@@ -41,3 +41,21 @@ def resample(float[::1] x, float dt_in, float tmin_in, int nt, float dt, float t
             tvalue += dt
         su.ints8r(nt_in, dt_in, tmin_in, &x[0], 0.0, 0.0, nt, &t[0], &out[0])
     return np.asarray(out)
+
+
+def interpolate(float[::1] x, float dt_in, float tmin_in, float[::1] xout):
+    """The samples of x, which are dt_in apart and start at tmin_in, at the times xout (which need not be evenly spaced)
+
+    Times outside of the input trace are 0.
+    """
+    cdef:
+        int nt_in = x.shape[0]
+        int nout = xout.shape[0]
+        float[::1] out = np.zeros(nout, dtype=np.float32)
+
+    if nt_in == 0 or nout == 0:
+        return np.asarray(out)
+
+    with nogil:
+        su.ints8r(nt_in, dt_in, tmin_in, &x[0], 0.0, 0.0, nout, &xout[0], &out[0])
+    return np.asarray(out)

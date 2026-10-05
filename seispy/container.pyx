@@ -64,13 +64,34 @@ cdef class Trace:
         rx_loc=None,
         sampling_unit='s',
         sampling_domain='unit',
-
+        dtype=None,
     ):
-        self.data = np.require(data, dtype=np.float32, requirements='C')
+        data = np.asarray(data)
+        if dtype is None:
+            dtype = np.complex64 if np.iscomplexobj(data) else np.float32
+        dtype = np.dtype(dtype)
+        cdef int data_type
+        if dtype == np.float32:
+            if np.iscomplexobj(data):
+                raise TypeError("Complex data needs dtype=complex64.")
+            data_type = SPY_FLOAT32
+            self.data = np.require(data, dtype=np.float32, requirements='C')
+            n_sample = self.data.shape[0]
+        elif dtype == np.complex64:
+            data_type = SPY_COMPLEX64
+            complex_data = np.require(data, dtype=np.complex64, requirements='C')
+            if complex_data.ndim != 1:
+                raise ValueError("A trace has 1D data.")
+            # (the samples are stored as the pairs of floats that they are)
+            self.data = complex_data.view(np.float32)
+            n_sample = complex_data.shape[0]
+        else:
+            raise TypeError(f"Traces have dtype float32 or complex64, not {dtype}.")
         cdef spy_trace_header *hdr = new_hdr()
         if hdr is NULL:
             raise MemoryError("Unable to allocate trace.")
-        hdr.n_sample = self.data.shape[0]
+        hdr.n_sample = n_sample
+        hdr.data_type = data_type
         hdr.d_sample = d_sample
         hdr.sample_start = sample_start
 
@@ -98,7 +119,12 @@ cdef class Trace:
 
     @property
     def n_sample(self):
-        return self.data.shape[0]
+        return self.data.shape[0] // floats_per_sample(self.hdr.data_type)
+
+    @property
+    def dtype(self):
+        """The dtype of the samples, float32 or complex64"""
+        return np.dtype(np.complex64) if self.hdr.data_type == SPY_COMPLEX64 else np.dtype(np.float32)
 
     @property
     def d_sample(self):
@@ -112,7 +138,7 @@ cdef class Trace:
     cdef Trace from_trace(spy_trace_header *hdr, float[::1] data, bint hdr_owner=False):
         cdef Trace tr = Trace.__new__(Trace)
         tr.hdr = hdr
-        tr.hdr.n_sample = data.shape[0]
+        tr.hdr.n_sample = data.shape[0] // floats_per_sample(hdr.data_type)
         tr.data = data
         tr.hdr_owner = hdr_owner
         return tr
@@ -130,7 +156,7 @@ cdef class Trace:
             free(hdr)
             raise IOError("Unable to read trace header from file.")
 
-        n_sample = hdr.n_sample
+        n_sample = hdr.n_sample * floats_per_sample(hdr.data_type)  # (floats)
         cdef float[::1] data = alloc_data(n_sample)
 
         if n_sample > 0:
@@ -146,9 +172,11 @@ cdef class Trace:
         if n_write != 1:
             raise IOError("Error writing trace header to file.")
 
-        n_write = fwrite(&self.data[0], sizeof(float), self.hdr.n_sample, fd)
-        if n_write != self.hdr.n_sample:
-            raise IOError("Error writing trace data to file.")
+        cdef size_t n_floats = self.data.shape[0]
+        if n_floats > 0:
+            n_write = fwrite(&self.data[0], sizeof(float), n_floats, fd)
+            if n_write != n_floats:
+                raise IOError("Error writing trace data to file.")
 
     @staticmethod
     cdef Trace from_bytes(const unsigned char[::1] bys):
@@ -162,7 +190,7 @@ cdef class Trace:
         # copy header bytes
         memcpy(hdr, &bys[0], SPY_TRC_HDR_SIZE)
 
-        n_sample = hdr.n_sample
+        n_sample = hdr.n_sample * floats_per_sample(hdr.data_type)  # (floats)
 
         cdef size_t n_total_size = SPY_TRC_HDR_SIZE + sizeof(float)*n_sample
         if bys.shape[0] != n_total_size:
@@ -198,12 +226,24 @@ cdef class Trace:
         unknown = set(fields) - set(header)
         if unknown:
             raise TypeError(f"Unknown header values: {sorted(unknown)}, expected some of {sorted(header)}")
+        if 'data_type' in fields:
+            raise TypeError("The data_type of a trace follows its data (give a complex array to make a complex trace).")
         header.update(fields)
         if data is None:
             new_data = np.array(self.data, dtype=np.float32)
+            n_sample = header['n_sample']
         else:
-            new_data = np.require(data, dtype=np.float32, requirements='C').reshape(-1).copy()
-        header['n_sample'] = new_data.shape[0]
+            data = np.asarray(data)
+            if np.iscomplexobj(data):
+                complex_data = np.require(data, dtype=np.complex64, requirements='C').reshape(-1)
+                new_data = complex_data.view(np.float32).copy()
+                n_sample = complex_data.shape[0]
+                header['data_type'] = SPY_COMPLEX64
+            else:
+                new_data = np.require(data, dtype=np.float32, requirements='C').reshape(-1).copy()
+                n_sample = new_data.shape[0]
+                header['data_type'] = SPY_FLOAT32
+        header['n_sample'] = n_sample
         hdr = new_hdr()
         try:
             hdr[0] = header  # (a dict converts to the struct)
@@ -223,26 +263,61 @@ cdef class Trace:
             # (nothing to point at, but it can not be NULL)
             buffer.buf = <void *> self.hdr
         buffer.len = self.data.shape[0] * sizeof(float)
-        buffer.itemsize = sizeof(float)
         buffer.ndim = 1
 
-        buffer.shape = self.data.shape
-        buffer.strides = self.data.strides
+        # the length (in samples) and the stride (in bytes) of the one dimension
+        cdef Py_ssize_t *info = <Py_ssize_t *> malloc(2 * sizeof(Py_ssize_t))
+        if info is NULL:
+            raise MemoryError("Unable to allocate the buffer description of a trace.")
+        cdef bint is_complex = self.hdr.data_type == SPY_COMPLEX64
+        info[0] = self.data.shape[0] // 2 if is_complex else self.data.shape[0]
+        info[1] = 2 * sizeof(float) if is_complex else sizeof(float)
+        buffer.itemsize = info[1]
+        buffer.shape = &info[0]
+        buffer.strides = &info[1]
         buffer.readonly = 0
 
         if flags & pybuf.PyBUF_FORMAT:
-            buffer.format = 'f'
+            buffer.format = 'Zf' if is_complex else 'f'
         else:
             buffer.format = NULL
 
-        buffer.internal = NULL
-        buffer.suboffsets = NULL #self.data.suboffsets
+        buffer.internal = info
+        buffer.suboffsets = NULL
 
     def __releasebuffer__(self, Py_buffer *buffer):
-        pass
+        free(buffer.internal)
+        buffer.internal = NULL
 
 def _trace_from_bytes(const unsigned char[::1] bys):
     return Trace.from_bytes(bys)
+
+
+cdef int require_real(Trace tr) except -1:
+    if tr.hdr.data_type == SPY_COMPLEX64:
+        raise TypeError("This works on real traces, and was given a complex one.")
+    return 0
+
+
+def split_complex(Trace trace):
+    """The real and the imaginary parts of a complex trace, as two real traces with its header"""
+    if trace.hdr.data_type != SPY_COMPLEX64:
+        raise TypeError("Only complex traces have a real and an imaginary part.")
+    samples = np.asarray(trace)
+    return trace.replace(np.ascontiguousarray(samples.real)), trace.replace(np.ascontiguousarray(samples.imag))
+
+
+def join_complex(Trace real, Trace imag):
+    """The complex trace with the samples of real as its real part and those of imag as its imaginary part, and the
+    header of real"""
+    require_real(real)
+    require_real(imag)
+    if real.n_sample != imag.n_sample:
+        raise ValueError("The real and imaginary parts must have the same number of samples.")
+    joined = np.empty(real.n_sample, dtype=np.complex64)
+    joined.real = np.asarray(real)
+    joined.imag = np.asarray(imag)
+    return real.replace(joined)
 
 
 cdef class CollectionHeader:

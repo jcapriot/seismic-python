@@ -108,6 +108,29 @@ A little bit more subtleties here is that I'm using cython iterators to do the a
 the intention of releasing the GIL when inside calls to enable threading.
 
 
+## Complex traces
+A trace has samples of dtype `float32` (the default) or `complex64`, which is what `np.asarray(trace)` gives you (still a
+zero-copy view). Make one with a complex array, or `Trace(data, d_sample, dtype='complex64')`. `fft` and `analytic`
+make them, and `ifft`, `real`, `imag`, `amp`, `logamp` and `phase` take them apart. SU has these as traces of pairs of
+floats with a trace id, here `n_sample` is the number of complex samples.
+
+Each stage does what makes sense for complex numbers, rather than refusing them all:
+
+* **Anything that is defined for complex numbers works**, and keeps the trace complex: scaling and adding (`gain`'s
+  `tpow`, `epow`, `scale`, `norm` and `bias`, which is a real number added to the real part), `op.neg`, `op.sum`,
+  `op.mean`, `op.sin`, `op.inv`, ..., `weight`, `zero`, `nan`, `taper`, `ramp`, `mute`, `wind`, `kill`, `shift`,
+  `reduce`, `normalize` (by rms or max), and `conv`. `op.abs` and `op.db` give the modulus (a real trace), and so do the
+  statistics `op.std` and `op.var`.
+* **Filters with real coefficients are linear**, so they are applied to the real and to the imaginary part: `bfilt`,
+  `filter`, `hilb`, `resamp` and `nmo`.
+* **What needs an order, a sign, a median, or a real signal's spectrum is rejected** with a `TypeError`: `op.posonly`,
+  `op.ssqrt`, `op.sgn`, `op.slog`, `op.spike`, `op.saf`, `op.despike`, `normalize('med')`, `gain`'s clipping, `agc`,
+  `gpow` and balancing options, `frac`, `phase`, `zerophase`, `acor`, `xcor`, `ai2r`, `r2ai`, `seispy.attributes`,
+  `fft` and `analytic`. SEG-Y has no complex traces.
+
+A trace shares the memory of the array it is made from (as it always has), so copy the array if you are going to write to
+the trace.
+
 ## Pipes and parallelism
 Processing steps can be written as input-less *stages* and chained with `|`, just like the shell:
 
@@ -155,6 +178,14 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.tapering.taper`, `ramp` | `sutaper`, `suramp` | taper the start and end of traces, and/or the edge traces of a panel |
 | `seispy.windowing.mute`, `wind`, `kill` | `sumute`, `suwind`, `sukill` | mute above/below a curve (modes 0-4), window by header value and in time, zero traces |
 | `seispy.stretching.shift`, `resamp`, `reduce`, `nmo` | `sushift`, `suresamp`, `sureduce`, `sunmo` | shift/window in time, sinc resampling, reduced time, NMO with velocity functions of time and CDP |
+| `seispy.transforms.hilb`, `zerophase` | `suhilb`, `suzerophase` | Hilbert transform (SU's own FIR, whose sign is the opposite of the usual one), zero-phase equivalent |
+| `seispy.transforms.analytic`, `fft`, `ifft`, `real`, `imag`, `amp`, `logamp`, `phase` | `suanalytic`, `sufft`, `suifft`, `suamp` | complex traces: make them, and take them apart |
+| `seispy.filters.frac`, `phase` | `sufrac`, `suphase` | fractional derivative/integral plus a phase shift, linear phase manipulation (numpy FFT) |
+| `seispy.filters.minphase`, `tvband` | `suminphase`, `sutvband` | minimum phase equivalent (Kolmogoroff), time-variant bandpass (numpy FFT) |
+| `seispy.decon.pef`, `shape` | `supef`, `sushape` | Wiener predictive/spiking deconvolution, Wiener shaping filter (SU's Toeplitz solver) |
+| `seispy.stretching.log`, `ilog`, `tsq`, `ttoz`, `ztot` | `sulog`, `suilog`, `sutsq`, `suttoz`, `suztot` | log and time-squared stretch, time-to-depth and depth-to-time resampling |
+| `seispy.convolution.acor`, `conv`, `xcor` | `suacor`, `suconv`, `suxcor` | auto-correlation, convolution and cross-correlation with a filter |
+| `seispy.attributes.amp`, `phase`, `freq`, `q`, ... | `suattributes` | instantaneous attributes, one stage per mode |
 
 ```python
 from seispy.synthetics import synlv
@@ -165,9 +196,10 @@ from seispy import operations as op
 traces = synlv() | gain(tpow=2.0) | filter(f=[10, 20, 60, 80]) | gain(agc=True, wagc=0.2) | op.sgn()
 ```
 
-`gain`, `filter` and `bfilt` call the SU C code itself. Like `su_bfhighpass` and `su_synlv` before them, the work of
-each program is a library function in the SU sources (`su_gain`, `su_filter`/`polygonalFilter`), with the program's
-`main` left out of the build. The operations of `suop` are each a stage of their own: most are plain array arithmetic
+`gain`, `bfilt` and `nmo` call the SU C code itself. Like `su_bfhighpass` and `su_synlv` before them, the work of
+each program is a library function in the SU sources (`su_gain`, `su_nmo`, ...), with the program's `main` left out
+of the build. `filter` designs its filter with `polygonalFilter` from the SU sources, and filters with numpy's FFT, on
+the trace as it is (sufilter pads each trace for its prime-factor FFT, which changes the filter slightly). The operations of `suop` are each a stage of their own: most are plain array arithmetic
 on the (zero-copy) numpy view of the trace's samples, and the three that are more than that (`op.saf`, `op.freq`,
 `op.despike`) are functions in the SU sources. The SU programs keep their lookup tables and scratch arrays in `static` variables filled in by
 the first trace, so in the library versions those are arguments, which is what lets the stages run in parallel. The

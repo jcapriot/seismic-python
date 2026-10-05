@@ -21,6 +21,14 @@ from ..stage import Stage
 
 _DEFAULT_NW = 21
 
+# The operations that are defined for complex samples. The others need an order, a sign, or a median of the samples
+# (posonly, ssqrt, sgn, slog, mod2pi, spike, saf, despike, ...), which complex numbers do not have. abs and db give a
+# real trace (the modulus, and its level in dB), the window statistics std and var also, the rest are complex.
+_COMPLEX_OK = {
+    'abs', 'sqr', 'exp', 'db', 'cos', 'sin', 'tan', 'cosh', 'sinh', 'tanh', 'neg', 'nop', 'inv', 's2v', 's2vm',
+    'd2m', 'cnorm', 'norm', 'avg', 'rmsamp', 'sum', 'integ', 'refl', 'diff', 'drv2', 'drv4', 'mean', 'std', 'var',
+}
+
 
 class _OpFactory:
     """What a stage of one of these operations calls to make its iterator (a class, so that it can be pickled)."""
@@ -36,7 +44,7 @@ class _OpFactory:
 
 def _define(name, func, doc, *, window=False, **flags):
     """Make the function that makes stages of one operation."""
-    factory = _OpFactory(name, func, **flags)
+    factory = _OpFactory(name, func, complex_ok=name in _COMPLEX_OK, **flags)
 
     def build(nw, inplace):
         kwargs = {}

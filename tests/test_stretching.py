@@ -429,3 +429,133 @@ def test_nmo_in_threads_and_pickled():
     npt.assert_array_equal(got, expected)
     again = pickle.loads(pickle.dumps(stage))
     npt.assert_array_equal(arr(run(again, trs)), expected)
+
+
+# ------------------------------------------------------------------------------------- log, ilog, tsq, ttoz, ztot
+from seispy.stretching import ilog, log, tsq, ttoz, ztot  # noqa: E402
+
+
+def smooth(n, dt=DT):
+    t = np.arange(n) * dt
+    return (np.sin(2 * np.pi * 3 * t) + 2.0).astype(np.float32)
+
+
+def test_log_samples_are_log_spaced():
+    nt = 100
+    x = np.arange(nt, dtype=np.float32)  # linear ramp: the interpolated value is the fractional sample number
+    (out,) = run(log(ntmin=10, m=3, ntau=64), traces(x))
+    dtau = np.log(nt / 10) / (3 * nt)
+    assert out.d_sample == pytest.approx(dtau, rel=1e-5)
+    valid = 10 * np.exp(np.arange(64) * dtau) < nt - 1
+    npt.assert_allclose(np.asarray(out)[valid], (10 * np.exp(np.arange(64) * dtau))[valid], rtol=1e-4)
+    assert (np.asarray(out)[~valid] == 0).all()
+
+
+def test_log_default_length_is_power_of_two():
+    (out,) = run(log(), traces(smooth(100)))
+    assert out.n_sample == 512  # 3 * 100 = 300, rounded up
+
+
+def test_log_ilog_round_trip():
+    nt = 200
+    x = smooth(nt)
+    (stretched,) = run(log(ntmin=20, m=8), traces(x))
+    (back,) = run(ilog(nt, ntmin=20, dt=DT), [stretched])
+    assert back.n_sample == nt
+    assert back.d_sample == pytest.approx(DT)
+    npt.assert_allclose(np.asarray(back)[25:190], x[25:190], atol=2e-2)
+    assert (np.asarray(back)[:20] == 0).all()
+
+
+def test_log_rejects_bad_parameters():
+    with pytest.raises(ValueError):
+        log(m=0)
+    with pytest.raises(ValueError):
+        log(ntmin=0)
+    with pytest.raises(ValueError):
+        ilog(0)
+
+
+def test_tsq_forward_samples_at_sqrt_times():
+    nt = 100
+    x = np.arange(nt, dtype=np.float32) * DT  # the value is the time, so the result is sqrt of the time squared
+    (out,) = run(tsq(tmin=0.04), traces(x))
+    d_out = 0.04 * 2 * DT
+    assert out.d_sample == pytest.approx(d_out)
+    assert out.n_sample == 1 + int((nt * DT) ** 2 / d_out)
+    k = np.arange(out.n_sample)
+    times = np.sqrt(k * d_out)
+    inside = times < (nt - 8) * DT  # (the sinc interpolator is poor in the last few samples)
+    npt.assert_allclose(np.asarray(out)[inside], times[inside], atol=2e-3)
+
+
+def test_tsq_inverse_undoes_forward():
+    nt = 250
+    x = smooth(nt)
+    (sq,) = run(tsq(tmin=0.05), traces(x))
+    (back,) = run(tsq(flag=-1, dt=DT), [sq])
+    n = min(back.n_sample, nt)
+    npt.assert_allclose(np.asarray(back)[20:n - 30], x[20:n - 30], atol=0.1)
+
+
+def test_tsq_rejects_bad_flag():
+    with pytest.raises(ValueError):
+        tsq(flag=0)
+
+
+def test_ttoz_constant_velocity_scales_axis():
+    v = 2000.0
+    nt = 100
+    x = np.arange(nt, dtype=np.float32) * DT  # the value of each sample is its time
+    (out,) = run(ttoz(v=v), traces(x))
+    assert out.d_sample == pytest.approx(v * DT / 2)
+    assert out.header['sample_start'] == pytest.approx(0.0)
+    assert out.header['sampling_unit'] == 2
+    z = np.arange(out.n_sample) * out.d_sample
+    inside = z < v * (nt - 1) * DT / 2 - 1.0
+    npt.assert_allclose(np.asarray(out)[inside], (2 * z / v)[inside], atol=2e-4)
+
+
+def test_ttoz_ztot_round_trip():
+    x = smooth(300)
+    (depth,) = run(ttoz(v=2500.0), traces(x))
+    (back,) = run(ztot(v=2500.0), [depth])
+    assert back.d_sample == pytest.approx(DT, rel=1e-4)
+    n = min(back.n_sample, 300)
+    npt.assert_allclose(np.asarray(back)[10:n - 10], x[10:n - 10], atol=3e-2)
+
+
+def test_ttoz_layered_velocity_is_slower_near_the_top():
+    t = [0.0, 0.2, 0.2001]
+    v = [1500.0, 1500.0, 3000.0]
+    x = np.arange(200, dtype=np.float32) * DT
+    (out,) = run(ttoz(t=t, v=v, dz=3.0), traces(x))
+    z = np.arange(out.n_sample) * 3.0
+    assert out.d_sample == 3.0
+    # at the depth z = 0.5 * 1500 * 0.2 = 150 m the time is 0.2 s
+    k = int(round(150 / 3.0))
+    assert np.asarray(out)[k] == pytest.approx(0.2, abs=2e-3)
+    assert z[k] == 150.0
+
+
+def test_ttoz_rejects_bad_velocity_function():
+    with pytest.raises(ValueError):
+        ttoz(t=[0.0, 1.0], v=[1500.0])
+    with pytest.raises(ValueError):
+        ttoz(t=[1.0, 0.5], v=[1500.0, 1600.0])
+    with pytest.raises(ValueError):
+        ttoz(dz=0.0)
+    with pytest.raises(ValueError):
+        ztot(dt=-1.0)
+
+
+def test_ztot_constant_velocity():
+    v = 2000.0
+    dz = 5.0
+    x = np.arange(100, dtype=np.float32) * dz  # the value is the depth
+    (out,) = run(ztot(v=v), traces(x, dt=dz))
+    assert out.d_sample == pytest.approx(2 * dz / v)
+    assert out.header['sampling_unit'] == 1
+    times = np.arange(out.n_sample) * out.d_sample
+    inside = times * v / 2 < (99 * dz) - 1.0
+    npt.assert_allclose(np.asarray(out)[inside], (times * v / 2)[inside], atol=1e-2)

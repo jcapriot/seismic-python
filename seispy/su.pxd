@@ -277,33 +277,33 @@ cdef extern from "cwp.h" nogil:
     void simple_unwrap_phase(int n, int trend, int zeromean, float w,
                              float *phase)
 
-    # Prime Factor FFTs
-    int npfa(int nmin)
-    int npfao(int nmin, int nmax)
-    int npfar(int nmin)
-    int npfaro(int nmin, int nmax)
-    void pfacc(int isign, int n, complex z[])
-    void pfarc(int isign, int n, float rz[], complex cz[])
-    void pfacr(int isign, int n, complex cz[], float rz[])
-    void pfa2cc(int isign, int idim, int n1, int n2, complex z[])
-    void pfa2rc(int isign, int idim, int n1, int n2, float rz[], complex cz[])
-    void pfa2cr(int isign, int idim, int n1, int n2, complex cz[], float rz[])
-    void pfamcc(int isign, int n, int nt, int k, int kt, complex z[])
+    # (no longer used, we use numpy's FFT) Prime Factor FFTs
+    # int npfa(int nmin)
+    # int npfao(int nmin, int nmax)
+    # int npfar(int nmin)
+    # int npfaro(int nmin, int nmax)
+    # void pfacc(int isign, int n, complex z[])
+    # void pfarc(int isign, int n, float rz[], complex cz[])
+    # void pfacr(int isign, int n, complex cz[], float rz[])
+    # void pfa2cc(int isign, int idim, int n1, int n2, complex z[])
+    # void pfa2rc(int isign, int idim, int n1, int n2, float rz[], complex cz[])
+    # void pfa2cr(int isign, int idim, int n1, int n2, complex cz[], float rz[])
+    # void pfamcc(int isign, int n, int nt, int k, int kt, complex z[])
 
-    # Prime Factor FFTs(double version)
-    int npfa_d(int nmin)
-    int npfao_d(int nmin, int nmax)
-    int npfar_d(int nmin)
-    int npfaro_d(int nmin, int nmax)
-    void pfacc_d(int isign, int n, dcomplex z[])
-    void pfacr_d(int isign, int n, dcomplex cz[], double rz[])
-    void pfarc_d(int isign, int n, double rz[], dcomplex cz[])
-    void pfamcc_d(int isign, int n, int nt, int k, int kt, dcomplex z[])
-    void pfa2cc_d(int isign, int idim, int n1, int n2, dcomplex z[])
-    void pfa2cr_d(int isign, int idim, int n1, int n2, dcomplex cz[],
-                  double rz[])
-    void pfa2rc_d(int isign, int idim, int n1, int n2, double rz[],
-                  dcomplex cz[])
+    # (no longer used, we use numpy's FFT) Prime Factor FFTs(double version)
+    # int npfa_d(int nmin)
+    # int npfao_d(int nmin, int nmax)
+    # int npfar_d(int nmin)
+    # int npfaro_d(int nmin, int nmax)
+    # void pfacc_d(int isign, int n, dcomplex z[])
+    # void pfacr_d(int isign, int n, dcomplex cz[], double rz[])
+    # void pfarc_d(int isign, int n, double rz[], dcomplex cz[])
+    # void pfamcc_d(int isign, int n, int nt, int k, int kt, dcomplex z[])
+    # void pfa2cc_d(int isign, int idim, int n1, int n2, dcomplex z[])
+    # void pfa2cr_d(int isign, int idim, int n1, int n2, dcomplex cz[],
+                  # double rz[])
+    # void pfa2rc_d(int isign, int idim, int n1, int n2, double rz[],
+                  # dcomplex cz[])
 
     # BLAS(Basic Linear Algebra Subroutines adapted from LINPACK FORTRAN)
     int isamax(int n, float *sx, int incx)
@@ -460,20 +460,20 @@ cdef extern from "cwp.h" nogil:
     void free2dcomplex(dcomplex ** p)
     void free3dcomplex(dcomplex ** *p)
 
-    # Prime Factor FFTs(double version)
-    int npfa_d(int nmin)
-    int npfao_d(int nmin, int nmax)
-    int npfar_d(int nmin)
-    int npfaro_d(int nmin, int nmax)
-    void pfacc_d(int isign, int n, dcomplex z[])
-    void pfacr_d(int isign, int n, dcomplex cz[], double rz[])
-    void pfarc_d(int isign, int n, double rz[], dcomplex cz[])
-    void pfamcc_d(int isign, int n, int nt, int k, int kt, dcomplex z[])
-    void pfa2cc_d(int isign, int idim, int n1, int n2, dcomplex z[])
-    void pfa2cr_d(int isign, int idim, int n1, int n2, dcomplex cz[],
-                  double rz[])
-    void pfa2rc_d(int isign, int idim, int n1, int n2, double rz[],
-                  dcomplex cz[])
+    # (no longer used, we use numpy's FFT) Prime Factor FFTs(double version)
+    # int npfa_d(int nmin)
+    # int npfao_d(int nmin, int nmax)
+    # int npfar_d(int nmin)
+    # int npfaro_d(int nmin, int nmax)
+    # void pfacc_d(int isign, int n, dcomplex z[])
+    # void pfacr_d(int isign, int n, dcomplex cz[], double rz[])
+    # void pfarc_d(int isign, int n, double rz[], dcomplex cz[])
+    # void pfamcc_d(int isign, int n, int nt, int k, int kt, dcomplex z[])
+    # void pfa2cc_d(int isign, int idim, int n1, int n2, dcomplex z[])
+    # void pfa2cr_d(int isign, int idim, int n1, int n2, dcomplex cz[],
+                  # double rz[])
+    # void pfa2rc_d(int isign, int idim, int n1, int n2, double rz[],
+                  # dcomplex cz[])
 
     dcomplex *alloc1dcomplex(size_t n1)
     dcomplex *realloc1dcomplex(dcomplex *v, size_t n1)
@@ -484,20 +484,20 @@ cdef extern from "cwp.h" nogil:
     void free2dcomplex(dcomplex ** p)
     void free3dcomplex(dcomplex ** *p)
 
-    # Prime Factor FFTs(double version)
-    int npfa_d(int nmin)
-    int npfao_d(int nmin, int nmax)
-    int npfar_d(int nmin)
-    int npfaro_d(int nmin, int nmax)
-    void pfacc_d(int isign, int n, dcomplex z[])
-    void pfacr_d(int isign, int n, dcomplex cz[], double rz[])
-    void pfarc_d(int isign, int n, double rz[], dcomplex cz[])
-    void pfamcc_d(int isign, int n, int nt, int k, int kt, dcomplex z[])
-    void pfa2cc_d(int isign, int idim, int n1, int n2, dcomplex z[])
-    void pfa2cr_d(int isign, int idim, int n1, int n2, dcomplex cz[],
-                  double rz[])
-    void pfa2rc_d(int isign, int idim, int n1, int n2, double rz[],
-                  dcomplex cz[])
+    # (no longer used, we use numpy's FFT) Prime Factor FFTs(double version)
+    # int npfa_d(int nmin)
+    # int npfao_d(int nmin, int nmax)
+    # int npfar_d(int nmin)
+    # int npfaro_d(int nmin, int nmax)
+    # void pfacc_d(int isign, int n, dcomplex z[])
+    # void pfacr_d(int isign, int n, dcomplex cz[], double rz[])
+    # void pfarc_d(int isign, int n, double rz[], dcomplex cz[])
+    # void pfamcc_d(int isign, int n, int nt, int k, int kt, dcomplex z[])
+    # void pfa2cc_d(int isign, int idim, int n1, int n2, dcomplex z[])
+    # void pfa2cr_d(int isign, int idim, int n1, int n2, dcomplex cz[],
+                  # double rz[])
+    # void pfa2rc_d(int isign, int idim, int n1, int n2, double rz[],
+                  # dcomplex cz[])
 
     # manipulation
     char *cwp_strdup(char *str)
@@ -811,7 +811,6 @@ cdef extern from "su.h" nogil:
 
     # filters
     void polygonalFilter(float *f, float *amps, int npoly, int nfft, float dt, float *filter, int *intfr)
-    void su_filter(float *data, int nt, int nfft, const float *filter, float *rt, complex *ct)
 
     # stretching_moveout_resamp
     void su_nmo_tables(int nt, float dt, float ft, float offset, const float *ovvt, float smute, int upward,

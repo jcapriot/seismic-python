@@ -146,7 +146,7 @@ def _ramp(upstream, *, tmin=None, tmax=None, dt=None):
             x[n - n2:] *= (n2 - np.arange(n2)).astype(np.float32) / F32(n2)
         return trace.replace(x)
 
-    return per_trace(upstream, ramp_trace)
+    return per_trace(upstream, ramp_trace, on_complex='native')
 
 
 def _nint(x):

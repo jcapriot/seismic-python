@@ -8,6 +8,7 @@ lives on the iterator instance here, and the tables are rebuilt whenever the tim
 """
 from .. cimport container as spyc
 from .. cimport su
+from ..container import join_complex, split_complex
 from libc.math cimport fabs
 from libc.float cimport FLT_MAX
 import numpy as np
@@ -185,8 +186,61 @@ cdef class _gain(spyc.BaseTraceIterator):
         if self.panel:
             return self._next_panel()
 
+        cdef spyc.Trace trace = self.iter_in.next_trace()
+        if trace.hdr.data_type == spyc.SPY_COMPLEX64:
+            return self._next_complex(trace)
+        return self._gain_trace(trace)
+
+    cdef _nonlinear_options(self):
+        """The names of the options that are set and have no meaning for complex numbers"""
+        names = []
+        if not abs(self.p.gpow - 1.0) <= 1e-6:
+            names.append('gpow (or jon)')
+        if self.p.agc:
+            names.append('agc')
+        if self.p.gagc:
+            names.append('gagc')
+        if self.p.trap > 0.0:
+            names.append('trap')
+        if self.p.clip > 0.0:
+            names.append('clip')
+        if self.p.pclip < FLT_MAX:
+            names.append('pclip')
+        if self.p.nclip > -FLT_MAX:
+            names.append('nclip')
+        if self.p.qclip < 1.0:
+            names.append('qclip')
+        if self.p.qbal:
+            names.append('qbal')
+        if self.p.pbal:
+            names.append('pbal')
+        if self.p.mbal:
+            names.append('mbal')
+        if self.p.maxbal:
+            names.append('maxbal')
+        return names
+
+    cdef spyc.Trace _next_complex(self, spyc.Trace trace):
+        """The gains that are linear (tpow, epow, vred, scale, norm, bias) are the same for the real and the
+        imaginary part, except for the bias, which is a real number that is added to the real part."""
+        names = self._nonlinear_options()
+        if names:
+            raise TypeError(
+                f"gain does not define {', '.join(names)} for complex traces (it has tpow, epow, vred, scale, norm and "
+                "bias for them)."
+            )
+        cdef float bias = self.p.bias
+        real, imag = split_complex(trace)
+        out_real = self._gain_trace(real)
+        self.p.bias = 0.0
+        try:
+            out_imag = self._gain_trace(imag)
+        finally:
+            self.p.bias = bias
+        return join_complex(out_real, out_imag)
+
+    cdef spyc.Trace _gain_trace(self, spyc.Trace trace):
         cdef:
-            spyc.Trace trace = self.iter_in.next_trace()
             float[::1] data_in = trace.data
             size_t n_sample = data_in.shape[0]
             float[::1] data
@@ -233,6 +287,8 @@ cdef class _gain(spyc.BaseTraceIterator):
                         raise ValueError("panel gain needs every trace to have the same number of samples.")
                 if n > 0:
                     tr = traces[0]
+                    for k in range(ntr):
+                        spyc.require_real(traces[k])  # (panel gain is for real traces)
                     dt = self._dt_of(tr.hdr)
                     big = spyc.alloc_data(n * ntr)
                     for k in range(ntr):

@@ -1,5 +1,7 @@
 from ._bandpass import butterworth_bandpass as _butterworth_bandpass
-from ._filter import _filter
+from ._fftfilter import _filter_stage as _filter
+from ._phasefilters import _frac, _phase
+from ._spectral import _minphase, _tvband
 from ..stage import stage
 
 # Stages are only ever chained with `|`: `source | bfilt(...)`.
@@ -22,4 +24,17 @@ bfilt = stage(_butterworth_bandpass, parallelism='trace', name='bfilt')
 # Notch:      filter(f=[10, 12.5, 35, 50, 60], amps=[1, .5, 0, .5, 1])
 filter = stage(_filter, parallelism='trace', name='filter', validate=True)
 
-__all__ = ['bfilt', 'filter']
+# A general (fractional) time derivative or integral, plus a phase shift (SUFRAC): `source | frac(power=1)`. See
+# _phasefilters.py for the parameters.
+frac = stage(_frac, parallelism='trace', name='frac', validate=True)
+
+# Phase manipulation by a linear transformation of the phase spectrum (SUPHASE): `source | phase(a=90)`
+phase = stage(_phase, parallelism='trace', name='phase', validate=True)
+
+# The minimum phase equivalent of each trace (SUMINPHASE), see _spectral.py for the parameters.
+minphase = stage(_minphase, parallelism='trace', name='minphase', validate=True)
+
+# A time-variant bandpass filter (SUTVBAND): `source | tvband(tf=[.2, 1.5], f=[[10, 12.5, 40, 50], [10, 12.5, 30, 40]])`
+tvband = stage(_tvband, parallelism='trace', name='tvband', validate=True)
+
+__all__ = ['bfilt', 'filter', 'frac', 'phase', 'minphase', 'tvband']

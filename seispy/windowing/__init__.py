@@ -140,7 +140,7 @@ def _mute(
         )
         return trace.replace(x)
 
-    return per_trace(upstream, mute_trace)
+    return per_trace(upstream, mute_trace, on_complex='native')
 
 
 def mute(xmute, tmute, *, mode=0, key='offset', ntaper=0, absolute=True, linvel=330.0, tm0=0.0, twindow=None):
@@ -238,8 +238,9 @@ def _wind(
                 return
             if good or (low <= ival <= high and (ival - s) % j == 0 and not bad):
                 if first_sample > 0 or n_out != trace.n_sample:
-                    out = np.zeros(n_out, dtype=np.float32)
-                    piece = np.asarray(trace)[first_sample:first_sample + n_out]
+                    samples = np.asarray(trace)
+                    out = np.zeros(n_out, dtype=samples.dtype)
+                    piece = samples[first_sample:first_sample + n_out]
                     out[:piece.shape[0]] = piece
                     trace = trace.replace(
                         out, sample_start=trace.header['sample_start'] + first_sample * trace.d_sample,
@@ -291,11 +292,13 @@ def _kill(upstream, key=None, a=None, *, min=None, count=1):
     source = as_trace_iterator(upstream)
 
     def zeroed(trace):
-        return trace.replace(np.zeros(trace.n_sample, dtype=np.float32))
+        return trace.replace(np.zeros_like(np.asarray(trace)))
 
     if min is None:
         # by the value of a header
-        return per_trace(source, lambda trace: zeroed(trace) if _key_value(trace, key) == a else trace)
+        return per_trace(
+            source, lambda trace: zeroed(trace) if _key_value(trace, key) == a else trace, on_complex='native'
+        )
 
     def gen():
         n_killed = 0
