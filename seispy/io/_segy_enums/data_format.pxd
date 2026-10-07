@@ -1,4 +1,4 @@
-cpdef enum DataFormat:
+cdef enum DataFormat:
     float32_ibm = 1
     int32 = 2
     int16 = 3

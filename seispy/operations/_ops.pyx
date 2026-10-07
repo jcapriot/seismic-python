@@ -100,7 +100,7 @@ cdef class _ops(spyc.BaseTraceIterator):
             float[::1] data
             float dt = <float> trace.hdr.d_sample
 
-        if trace.hdr.data_type == spyc.SPY_COMPLEX64:
+        if trace.hdr.data_type == spyc.SPY_DTYPE_COMPLEX64:
             return self._next_complex(trace)
         if n_sample == 0:
             return spyc.Trace.from_trace(spyc.copy_of_hdr(trace.hdr), data_in, True)

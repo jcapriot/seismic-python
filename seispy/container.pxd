@@ -6,12 +6,12 @@ from ._cy_enums cimport EnsembleType, SamplingDomain, SamplingUnit, CoordinateUn
 cdef extern from *:
     """
     #define SPY_UNKNOWN 0
-    #define SPY_FLOAT32 0
-    #define SPY_COMPLEX64 1
+    #define SPY_DTYPE_FLOAT32 0
+    #define SPY_DTYPE_COMPLEX64 1
     """
     int SPY_UNKNOWN
-    int SPY_FLOAT32      # (data_type) real samples, 1 float each
-    int SPY_COMPLEX64    # (data_type) complex samples, 2 floats each (real then imaginary)
+    int SPY_DTYPE_FLOAT32      # (data_type) real samples, 1 float each
+    int SPY_DTYPE_COMPLEX64    # (data_type) complex samples, 2 floats each (real then imaginary)
 
 cdef:
     struct spy_trace_header:
@@ -25,7 +25,7 @@ cdef:
         size_t ensemble_trace_number    # trace number within ensemble, 1 based like SU's cdpt (0 = not set)
         int sampling_unit               # 0 = s, 1  = meters
         int sampling_domain             # 0 (sample unit domain), 1 = sample_unit fourier domain
-        int data_type                   # SPY_FLOAT32 or SPY_COMPLEX64. n_sample counts samples (not floats)
+        int data_type                   # SPY_DTYPE_FLOAT32 or SPY_DTYPE_COMPLEX64. n_sample counts samples (not floats)
         int coord_unit                  # CoordinateUnit of the x and y of tx_loc and rx_loc (z is an elevation)
         int trace_type                  # trace identification code of SEG-Y (and SU's trid): 1 seismic data, 2 dead, ... 0 not set
         int fold                        # the number of traces that were stacked to make this one (0 = not set, one trace)
@@ -46,7 +46,7 @@ cdef spy_trace_header* copy_of_hdr(spy_trace_header *hdr_in) nogil
 
 # the number of floats that make up one sample
 cdef inline size_t floats_per_sample(int data_type) noexcept nogil:
-    return 2 if data_type == SPY_COMPLEX64 else 1
+    return 2 if data_type == SPY_DTYPE_COMPLEX64 else 1
 
 # Garbage collector managed buffers (the memory is owned by the returned view's base object).
 cdef float[::1] alloc_data(size_t n_sample)

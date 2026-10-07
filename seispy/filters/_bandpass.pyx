@@ -121,7 +121,7 @@ cdef class butterworth_bandpass(spyc.BaseTraceIterator):
 
     cdef spyc.Trace next_trace(self):
         cdef spyc.Trace trace = self.iter_in.next_trace()
-        if trace.hdr.data_type == spyc.SPY_COMPLEX64:
+        if trace.hdr.data_type == spyc.SPY_DTYPE_COMPLEX64:
             # a filter with real coefficients, so the same filter on the real and on the imaginary part
             real, imag = split_complex(trace)
             return join_complex(self._filter(real), self._filter(imag))

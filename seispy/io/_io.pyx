@@ -88,6 +88,7 @@ cdef DupResult PyFile_Dup(object file, char * mode):
         pos = file.tell()
     except Exception:
         fclose(handle)
+        raise
     if spy_fseek(handle, pos, SEEK_SET) == -1:
         fclose(handle)
         raise IOError("seeking file failed")
@@ -215,7 +216,7 @@ cdef void copy_struct_from_char(
     size_t[:, ::1] struct_info,
     bint is_packed,
     size_t expected_size,
-    unsigned char *in_chrs
+    const unsigned char *in_chrs
 ) noexcept nogil:
     cdef:
         size_t i, j
