@@ -41,7 +41,11 @@ endif
 
 c_undefined_ok = ['-Wno-maybe-uninitialized']
 
-cython_c_args = [numpy_nodepr_api, use_math_defines, '-DCYTHON_TRACE_NOGIL=1']
+cython_c_args = [numpy_nodepr_api, use_math_defines]
+# (the `linetrace` directive of the modules only does something if this is defined: -Dline_tracing=true)
+if get_option('line_tracing')
+  cython_c_args += ['-DCYTHON_TRACE_NOGIL=1']
+endif
 
 cython_args = []
 if cy.version().version_compare('>=3.1.0')

@@ -1,0 +1,2 @@
+option('line_tracing', type : 'boolean', value : false,
+       description : 'Compile line tracing into the Cython modules (CYTHON_TRACE_NOGIL), for coverage and profiling. It slows them down.')
