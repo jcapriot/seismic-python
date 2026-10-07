@@ -20,9 +20,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      # the build frontend is uv (see pyproject.toml): it has to be on the PATH of the windows and macos runners
+      - uses: astral-sh/setup-uv@v7
+
       - name: Build wheels
         # (the settings, and the tests that the wheels are run through, are in pyproject.toml)
-        uses: pypa/cibuildwheel@v3.2.1
+        uses: pypa/cibuildwheel@v4.3.0
 
       - uses: actions/upload-artifact@v5
         with:

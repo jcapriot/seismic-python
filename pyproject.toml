@@ -75,15 +75,18 @@ dev = [
 ]
 
 [tool.cibuildwheel]
-# skip building wheels for python before 3.12, all pypy versions, free threaded builds, and specialty linux
-# processors (still does arm builds though).
-# skip windows 32bit
-skip = "cp36-* cp37-* cp38-* cp39-* cp310-* cp311-* pp* cp3*t-* *_ppc64le *_i686 *_s390x *-win32"
-build-verbosity = "3"
+# The Python versions that are built follow `requires-python` above, and PyPy is not enabled (see the `enable` option), so
+# there is nothing to skip for those. Skip free threaded builds (the extension modules have not been tested without the GIL)
+# and 32 bit windows.
+skip = ["cp3??t-*", "*-win32"]
+build-frontend = "build[uv]"
+build-verbosity = 1
 
-# run the tests on the wheels that are built (from {project}/tests: the package that is imported is the installed one)
-test-requires = "pytest"
-test-command = "pytest {project}/tests"
+# Test every wheel that is built with the whole test suite. The tests are run from a temporary directory outside of the source
+# tree, so that the package that is imported is the wheel. (The tests of the examples run the examples.)
+test-requires = ["pytest"]
+test-sources = ["tests", "examples"]
+test-command = "pytest tests"
 
 
 # use the visual studio compilers
