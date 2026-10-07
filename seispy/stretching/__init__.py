@@ -9,7 +9,7 @@ import numpy as np
 
 from ..stage import Stage, per_trace, stage
 from ..container import as_trace_iterator, from_iterable
-from . import _nmo, _resample
+from . import _nmo, _resample, _stretch
 
 __all__ = ['shift', 'resamp', 'reduce', 'nmo', 'log', 'ilog', 'tsq', 'ttoz', 'ztot']
 
@@ -304,18 +304,6 @@ def _next_power_of_2(n):
     return p
 
 
-def _linear_at(x, positions):
-    """x linearly interpolated at fractional sample numbers, and 0 outside of [0, len(x) - 1) (as in sulog)"""
-    out = np.zeros(positions.shape[0], dtype=np.float32)
-    valid = (positions >= 0.0) & (positions < x.shape[0] - 1)
-    if valid.any():
-        p = positions[valid]
-        i = p.astype(np.int64)
-        delta = (p - i).astype(np.float32)
-        out[valid] = (1.0 - delta) * x[i] + delta * x[i + 1]
-    return out
-
-
 def _log(upstream, *, ntmin=None, m=3, ntau=None):
     if m < 1:
         raise ValueError("m must be at least 1")
@@ -325,25 +313,24 @@ def _log(upstream, *, ntmin=None, m=3, ntau=None):
         raise ValueError("ntmin must be at least 1 (the log of 0 is not a number)")
     cache = {}
 
-    def positions_for(nt):
+    def stretch_for(nt):
         if nt not in cache:
-            first = ntmin if ntmin is not None else 0.1 * nt
-            first = int(first)
+            first = int(ntmin if ntmin is not None else 0.1 * nt)
             if first < 1:
                 raise ValueError(f"ntmin={first} is less than 1: there are too few samples ({nt}) for the default")
             n_tau_temp = m * nt
             dtau = np.log(nt / first) / n_tau_temp
             n_out = ntau if ntau is not None else _next_power_of_2(n_tau_temp)
             # the fractional sample of the input that each output sample is at
-            positions = first * np.exp(np.arange(n_out, dtype=np.float32) * np.float32(dtau))
+            positions = (first * np.exp(np.arange(n_out, dtype=np.float32) * np.float32(dtau))).astype(np.float32)
             cache.clear()
-            cache[nt] = (positions, dtau)
+            cache[nt] = (_stretch.Stretch(positions, nt), dtau)
         return cache[nt]
 
     def log_trace(trace):
         x = np.asarray(trace)
-        positions, dtau = positions_for(x.shape[0])
-        return trace.replace(_linear_at(x, positions), d_sample=float(dtau))
+        stretch, dtau = stretch_for(x.shape[0])
+        return trace.replace(stretch.apply(x), d_sample=float(dtau))
 
     return per_trace(upstream, log_trace)
 
@@ -365,19 +352,21 @@ def _ilog(upstream, nt, *, ntmin=None, dt=None):
     first = int(0.1 * nt) if ntmin is None else int(ntmin)
     if first < 1:
         raise ValueError("ntmin must be at least 1")
+    cache = {}
 
     def ilog_trace(trace):
         x = np.asarray(trace)
         dtau = trace.d_sample
         if not dtau:
             raise ValueError("The trace has no sample interval (dtau).")
-        positions = np.full(nt, -1.0)
-        samples = np.arange(first, nt)
-        positions[first:] = np.log(samples / first) / dtau  # (the fractional sample of the log stretched trace)
-        out = _linear_at(x, positions)
-        if dt is not None:
-            return trace.replace(out, d_sample=dt)
-        return trace.replace(out)
+        key = (x.shape[0], dtau)
+        if key not in cache:
+            positions = np.full(nt, -1.0, dtype=np.float32)  # (the samples before the first one are 0)
+            positions[first:] = np.log(np.arange(first, nt) / first) / dtau  # (the fractional sample of the stretched trace)
+            cache.clear()
+            cache[key] = _stretch.Stretch(positions, x.shape[0])
+        out = cache[key].apply(x)
+        return trace.replace(out, d_sample=dt) if dt is not None else trace.replace(out)
 
     return per_trace(upstream, ilog_trace)
 
@@ -472,22 +461,15 @@ def _ttoz(upstream, *, t=None, v=None, nz=None, dz=None, fz=None):
         if not dt:
             raise ValueError("The trace has no sample interval.")
         ft = trace.header['sample_start']
-        # (suttoz takes the times of the samples to start at 0, whatever the time of the first one)
+        # (suttoz takes the times of the samples to start at 0, whatever the time of the first one, here they are the
+        # times of the samples)
         vt = _vf_at(axis, velocities, ft + np.arange(nt) * dt)
         d_z = vt.min() * dt / 2.0 if dz is None else dz
         f_z = vt[0] * ft / 2.0 if fz is None else fz
         n_z = int(1 + (nt - 1) * dt * vt.max() / (2.0 * d_z)) if nz is None else nz
-        # z(t), then t(z)
-        zt = np.empty(nt)
-        zt[0] = 0.5 * ft * vt[0]
-        zt[1:] = zt[0] + np.cumsum(0.5 * dt * vt[:-1])
-        z = f_z + np.arange(n_z) * d_z
-        tz = np.interp(z, zt, ft + np.arange(nt) * dt)
-        before = z <= zt[0]
-        tz[before] = 2.0 * z[before] / vt[0]
-        after = z >= zt[-1]
-        tz[after] = ft + (nt - 1) * dt + 2.0 * (z[after] - zt[-1]) / vt[-1]
-        y = _resample.interpolate(x, dt, ft, tz.astype(np.float32))
+        # the time of each depth, from the SU library
+        tz = _stretch.ttoz_table(vt.astype(np.float32), dt, ft, int(n_z), d_z, f_z)
+        y = _resample.interpolate(x, dt, ft, tz)
         return trace.replace(y, d_sample=d_z, sample_start=f_z, sampling_unit=_METERS)
 
     return per_trace(upstream, ttoz_trace)
@@ -523,17 +505,9 @@ def _ztot(upstream, *, z=None, v=None, nt=None, dt=None, ft=None):
         d_t = 2.0 * dz / vz.min() if dt is None else dt
         f_t = 2.0 * fz / vz[0] if ft is None else ft
         n_t = int(1 + (n_z - 1) * 2.0 * dz / (vz.max() * d_t)) if nt is None else nt
-        # t(z), then z(t)
-        tz = np.empty(n_z)
-        tz[0] = 2.0 * fz / vz[0]
-        tz[1:] = tz[0] + np.cumsum(2.0 * dz / vz[:-1])
-        times = f_t + np.arange(n_t) * d_t
-        zt = np.interp(times, tz, fz + np.arange(n_z) * dz)
-        before = times <= tz[0]
-        zt[before] = 0.5 * times[before] * vz[0]
-        after = times >= tz[-1]
-        zt[after] = fz + (n_z - 1) * dz + 0.5 * vz[-1] * (times[after] - tz[-1])
-        y = _resample.interpolate(x, dz, fz, zt.astype(np.float32))
+        # the depth of each time, from the SU library
+        zt = _stretch.ztot_table(vz.astype(np.float32), dz, fz, int(n_t), d_t, f_t)
+        y = _resample.interpolate(x, dz, fz, zt)
         return trace.replace(y, d_sample=d_t, sample_start=f_t, sampling_unit=1)
 
     return per_trace(upstream, ztot_trace)

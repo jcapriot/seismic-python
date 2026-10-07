@@ -445,6 +445,7 @@ cdef class SEGYTrace:
             ext_hdr.n_exttrchdr = 1
 
             hdr.trctype = spy_hdr.trace_type
+            hdr.fold = spy_hdr.fold
             hdr.iline = spy_hdr.iline
             hdr.xline = spy_hdr.xline
             ext_hdr.linetrc = spy_hdr.trace_id
@@ -586,6 +587,7 @@ cdef class SEGYTrace:
                 spy_hdr.rx_loc[0] = spy_hdr.tx_loc[0] + file_offset
 
             spy_hdr.trace_type = self.hdr.trctype
+            spy_hdr.fold = self.hdr.fold
             spy_hdr.iline = self.hdr.iline
             spy_hdr.xline = self.hdr.xline
             spy_hdr.ensemble_trace_number = max(self.hdr.cdptrc, 0)  # (1 based, 0 is not set)

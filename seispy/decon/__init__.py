@@ -6,7 +6,7 @@ Not supported: supef's ``cdp`` tables (lags that change with the CDP), ``wienero
 """
 import numpy as np
 
-from ..convolution import _correlate
+from ..convolution import _convolve, _correlate
 from ..stage import Stage, per_trace
 from . import _toeplitz
 
@@ -52,7 +52,7 @@ def _shape(upstream, w, d, *, nshape=None, pnoise=0.001):
         x = np.asarray(trace)
         n = x.shape[0]
         shaper = shaper_of(n if nshape is None else nshape)
-        full = np.convolve(x, shaper)
+        full = _convolve(x, shaper)
         # z[i] = sum_k shaper[k] x[i - k - shift], which is the sample i - shift of the full convolution
         out = np.zeros(n, dtype=np.float32)
         i = np.arange(n)
@@ -141,7 +141,7 @@ def _pef(upstream, *, minlag=None, maxlag=None, pnoise=0.001, mincorr=None, maxc
         wiener = _toeplitz.solve(np.ascontiguousarray(mixed[:n_lag]), np.ascontiguousarray(mixed[i_minlag:i_minlag + n_lag]))[0]
         kernel = np.zeros(i_maxlag + 1, dtype=np.float32)
         kernel[i_minlag:] = wiener
-        out = x - np.convolve(x, kernel)[:nt]
+        out = x - _convolve(x, kernel, nt)
         return trace.replace(out)
 
     return per_trace(upstream, pef_trace)

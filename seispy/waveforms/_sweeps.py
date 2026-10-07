@@ -1,7 +1,8 @@
 """
 Vibroseis sweeps: SUVIBRO (``su/main/synthetics_waveforms_testpatterns``), one function for each of its kinds of sweep:
 ``vibro_linear`` (sweep=1), ``vibro_segments`` (sweep=2), ``vibro_octave`` (sweep=3), ``vibro_hertz`` (sweep=4) and
-``vibro_tpower`` (sweep=5). Each makes one trace, a modulated cosine, with the sweep taper of suvibro at the ends.
+``vibro_tpower`` (sweep=5). Each makes one trace, a modulated cosine, with the sweep taper of suvibro at the ends. The sweeps and the taper are
+functions of the SU library.
 
 Where suvibro does not do what its documentation says this does what the documentation says: sweep=5 makes the
 dB per Hertz sweep (it calls that function instead of the t-power one), a dB per Hertz sweep with a constant of 0 is
@@ -11,11 +12,11 @@ suvibro puts it one sample after the end.
 """
 import numpy as np
 
+from . import _waveforms
 from ..container import Trace, from_iterable
+from ..tapering import _taperc as _taper_c
 
 __all__ = ['vibro_linear', 'vibro_segments', 'vibro_octave', 'vibro_hertz', 'vibro_tpower']
-
-_EPS = 3.8090232  # exp(-EPS * EPS) = 5e-7
 
 _TAPERS = {
     'linear': 1, 'sine': 2, 'cosine': 3, 'gaussian': 4, 'gaussian2': 5,
@@ -23,32 +24,14 @@ _TAPERS = {
 }
 
 
-def _envelope(f, kind):
-    if kind == 1:
-        return f
-    if kind == 2:
-        return np.sin(np.pi * f / 2.0)
-    if kind == 3:
-        return 0.5 * (1.0 - np.cos(np.pi * f))
-    if kind == 4:
-        return np.exp(-((_EPS * (1.0 - f)) ** 2))
-    return np.exp(-((2.0 * (1.0 - f)) ** 2))
-
-
 def _taper(samples, t1, t2, taper, tv, dt):
     kind = _TAPERS.get(taper)
     if kind is None:
         raise ValueError(f"taper={taper!r} must be one of 1 to 5 or {[k for k in _TAPERS if isinstance(k, str)]}")
-    n = samples.shape[0]
-    n1 = int(t1 / dt + 1)
-    n2 = int(t2 / dt + 1)
-    if n1 > 1:
-        i = np.arange(min(n1, n))
-        samples[i] *= _envelope(i / n1, kind)
-    if n2 > 1:
-        i = np.arange(min(n2, n))
-        samples[n - 1 - i] *= _envelope(i / n2, kind)
-    return samples
+    # (the taper of the SU library, which is that of sutaper)
+    out = np.ascontiguousarray(samples, dtype=np.float32)
+    _taper_c.time_taper(out, t1, t2, kind, dt)
+    return out
 
 
 def _check(dt, tv, t1, t2, radians, phz):
@@ -61,6 +44,11 @@ def _check(dt, tv, t1, t2, radians, phz):
     if t1 + t2 > tv:
         raise ValueError(f"sum of tapers t1={t1}, t2={t2} exceeds tv={tv}")
     return phz if radians else phz * 2.0 * np.pi / 360.0
+
+
+def _count(tv, dt):
+    """The number of samples, tv / dt + 1 (suvibro finds it in single precision, which makes 2500 of the 2501 for tv=10 and dt=.004)"""
+    return int(tv / dt + 1.0e-6) + 1
 
 
 def _source(samples, dt):
@@ -82,9 +70,7 @@ def vibro_linear(*, f1=10.0, f2=60.0, tv=10.0, dt=0.004, phz=0.0, radians=True, 
     3 ``'cosine'``, 4 ``'gaussian'`` (+-3.8) or 5 ``'gaussian2'`` (+-2.0).
     """
     phz = _check(dt, tv, t1, t2, radians, phz)
-    t = np.arange(int(tv / dt + 1)) * dt
-    rate = (f2 - f1) / tv
-    return _finish(np.cos(2.0 * np.pi * (f1 + rate / 2.0 * t) * t + phz), dt, t1, t2, taper, tv)
+    return _finish(_waveforms.vibro_linear(_count(tv, dt), f1, f2, tv, dt, phz), dt, t1, t2, taper, tv)
 
 
 def vibro_segments(*, fseg=(10.0, 60.0), tseg=(0.0, 10.0), dt=0.004, phz=0.0, radians=True, t1=1.0, t2=1.0, taper=1):
@@ -98,47 +84,24 @@ def vibro_segments(*, fseg=(10.0, 60.0), tseg=(0.0, 10.0), dt=0.004, phz=0.0, ra
         raise ValueError("tseg must increase monotonically")
     tv = float(tseg[-1])
     phz = _check(dt, tv, t1, t2, radians, phz)
-    nt = int(tv / dt + 1)
-    samples = np.zeros(nt)
-    start, phase = 0, 0.0
-    for i in range(len(tseg) - 1):
-        length = tseg[i + 1] - tseg[i]
-        m = int(nt / tv * length)
-        aa = 2.0 * np.pi * fseg[i] * dt
-        ab = np.pi * (fseg[i + 1] - fseg[i]) * dt * dt / length
-        j = np.arange(m)
-        samples[start + j] = np.cos(j * (ab * j + aa) + phase + phz)
-        phase = (ab * m + aa) * m + phase
-        start += m
+    nt = _count(tv, dt)
+    samples = _waveforms.vibro_segments(
+        nt, fseg.astype(np.float32), np.diff(tseg).astype(np.float32), tv, dt, phz,
+    )
     return _finish(samples, dt, t1, t2, taper, tv)
 
 
 def vibro_octave(*, f1=10.0, f2=60.0, tv=10.0, dt=0.004, swconst=0.0, phz=0.0, radians=True, t1=1.0, t2=1.0, taper=1):
     """A sweep with a boost in decibels per octave of ``swconst`` (SUVIBRO sweep=3)."""
     phz = _check(dt, tv, t1, t2, radians, phz)
-    if swconst == -6.0:
-        swconst = -5.999
-    power = swconst / 6.0 + 1.0
-    s = (power + 1.0) / power
-    k1 = f1 ** power
-    k2 = (f2 ** power - f1 ** power) / tv
-    t = np.arange(int(tv / dt + 1)) * dt
-    samples = np.cos(2.0 * np.pi / (s * k2) * (k1 + k2 * t) ** s + phz)
+    samples = _waveforms.vibro_octave(_count(tv, dt), f1, f2, tv, dt, swconst, phz)
     return _finish(samples, dt, t1, t2, taper, tv)
 
 
 def vibro_hertz(*, f1=10.0, f2=60.0, tv=10.0, dt=0.004, swconst=0.0, phz=0.0, radians=True, t1=1.0, t2=1.0, taper=1):
     """A sweep with a boost in decibels per Hertz of ``swconst`` (SUVIBRO sweep=4). With 0 it is a linear sweep."""
-    if swconst == 0.0:
-        return vibro_linear(f1=f1, f2=f2, tv=tv, dt=dt, phz=phz, radians=radians, t1=t1, t2=t2, taper=taper)
     phz = _check(dt, tv, t1, t2, radians, phz)
-    k1 = 20.0 / (swconst * np.log(10.0))
-    k2 = (np.exp(swconst * np.log(10.0) * (f2 - f1) / 20.0) - 1.0) / tv
-    if k2 == 0.0:  # (the same frequency at both ends: the boost has nothing to move)
-        return vibro_linear(f1=f1, f2=f2, tv=tv, dt=dt, phz=phz, radians=radians, t1=t1, t2=t2, taper=taper)
-    t = np.arange(int(tv / dt + 1)) * dt
-    u = 1.0 + t * k2
-    samples = np.cos(2.0 * np.pi * (f1 * t + k1 / k2 * (u * np.log(u) - u)) + phz)
+    samples = _waveforms.vibro_hertz(_count(tv, dt), f1, f2, tv, dt, swconst, phz)
     return _finish(samples, dt, t1, t2, taper, tv)
 
 
@@ -147,7 +110,5 @@ def vibro_tpower(*, f1=10.0, f2=60.0, tv=10.0, dt=0.004, swconst=0.0, phz=0.0, r
     phz = _check(dt, tv, t1, t2, radians, phz)
     if swconst <= -1.0:
         raise ValueError("swconst must be more than -1")
-    t = np.arange(int(tv / dt + 1)) * dt
-    s = t / tv
-    samples = np.cos(2.0 * np.pi * t * (f1 + (f2 - f1) / (swconst + 1.0) * s ** swconst) + phz)
+    samples = _waveforms.vibro_tpower(_count(tv, dt), f1, f2, tv, dt, swconst, phz)
     return _finish(samples, dt, t1, t2, taper, tv)

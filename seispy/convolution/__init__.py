@@ -1,8 +1,8 @@
 """
 Convolution and correlation: SUACOR, SUCONV and SUXCOR (``su/main/convolution_correlation``).
 
-``acor``, ``conv`` and ``xcor`` are done in the time domain, as in the SU sources (with the ``convolve_cwp`` and ``xcor`` of the SU library),
-by numpy's ``convolve`` and ``correlate``. The ``sufile`` options of SU become a ``Trace`` (or arrays), and suxcor's
+``acor``, ``conv`` and ``xcor`` are done in the time domain, as in the SU sources with the ``convolve_cwp`` and ``xcor`` of the SU library
+(``_cwp.pyx``), by those routines. The ``sufile`` options of SU become a ``Trace`` (or arrays), and suxcor's
 ``panel`` option, which correlates windows of a whole gather, is not supported.
 
 The traces that come out are along a lag (or, for convolution, time) axis, so their start time is set to match.
@@ -12,24 +12,32 @@ import warnings
 
 import numpy as np
 
+from . import _cwp
 from ..container import as_trace_iterator, from_iterable
 from ..stage import Stage, per_trace, stage
 
 __all__ = ['acor', 'conv', 'xcor', 'acorfrac', 'refcon']
 
 
+def _real32(x):
+    return np.ascontiguousarray(x, dtype=np.float32)
+
+
 def _correlate(x, y, first_lag, n_lags):
     """z[i] = sum_j x[j] y[i+j], for i = first_lag, ..., first_lag + n_lags - 1 (x and y are 0 outside of themselves)"""
-    z = np.zeros(n_lags, dtype=np.float32)
-    if x.shape[0] == 0 or y.shape[0] == 0:
-        return z
-    full = np.correlate(y, x, mode='full')  # for the lags -(len(x) - 1) to len(y) - 1
-    lowest = -(x.shape[0] - 1)
-    lo = max(first_lag, lowest)
-    hi = min(first_lag + n_lags, lowest + full.shape[0])
-    if hi > lo:
-        z[lo - first_lag:hi - first_lag] = full[lo - lowest:hi - lowest]
-    return z
+    return _cwp.correlate(_real32(x), _real32(y), first_lag, n_lags)
+
+
+def _convolve(x, y, n_out=None):
+    """The first n_out samples (by default all of them) of the convolution of x and y, either of which can be complex"""
+    n_out = x.shape[0] + y.shape[0] - 1 if n_out is None else n_out
+    if not (np.iscomplexobj(x) or np.iscomplexobj(y)):
+        return _cwp.convolve(_real32(x), _real32(y), n_out)
+    xr, xi = _real32(np.real(x)), _real32(np.imag(x))
+    yr, yi = _real32(np.real(y)), _real32(np.imag(y))
+    real = _cwp.convolve(xr, yr, n_out) - _cwp.convolve(xi, yi, n_out)
+    imag = _cwp.convolve(xr, yi, n_out) + _cwp.convolve(xi, yr, n_out)
+    return (real + 1j * imag).astype(np.complex64)
 
 
 # ------------------------------------------------------------------------------------------------------------ acor
@@ -76,7 +84,7 @@ def _conv(upstream, filter, *, panel=False):
     source = as_trace_iterator(upstream)
 
     def convolve(trace, samples, start):
-        out = np.convolve(np.asarray(trace), samples)
+        out = _convolve(np.asarray(trace), samples)
         return trace.replace(out, sample_start=trace.header['sample_start'] + start)
 
     if not panel:
@@ -175,12 +183,9 @@ def _acorfrac(upstream, *, a=0.0, b=0.0, ntout=None, sym=False):
         if n_out > n_fft:
             raise ValueError(f"ntout={n_out} is more than the {n_fft} samples that the transform has")
         # the SU transform has the conjugate of numpy's kernel
-        spectrum = np.conj(np.fft.rfft(x.astype(np.float64), n_fft))
-        amplitude = np.abs(spectrum)
-        phase = np.arctan2(spectrum.imag, spectrum.real)
-        with np.errstate(divide='ignore', invalid='ignore'):
-            factor = np.where(amplitude > 0.0, amplitude ** a, 0.0) * np.exp(-1j * b * phase)
-        y = np.fft.irfft(np.conj(spectrum * factor), n_fft)
+        spectrum = np.ascontiguousarray(np.conj(np.fft.rfft(x.astype(np.float64), n_fft)), dtype=np.complex64)
+        _cwp.acorfrac_spectrum(spectrum, a, b, False)  # (the function of the SU library)
+        y = np.fft.irfft(np.conj(spectrum), n_fft)
         if sym:
             # the lags -(n_out - 1) / 2 to (n_out - 1) / 2, around the zero lag
             first = -((n_out - 1) // 2)
@@ -224,7 +229,7 @@ def _refcon(upstream, forshot, *, xy=0):
             if current is None:
                 raise ValueError("Can't get the first requested forward trace.")
         for reverse in source:
-            out = np.convolve(np.asarray(current), np.asarray(reverse))
+            out = _convolve(np.asarray(current), np.asarray(reverse))
             # (the sample interval of the output is half that of the input)
             yield reverse.replace(out, d_sample=reverse.d_sample / 2)
             current = next(forward, None)

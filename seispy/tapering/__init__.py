@@ -1,5 +1,5 @@
 """
-Tapering programs: SUTAPER and SURAMP (``su/main/tapering``).
+Tapering programs: SUTAPER and SURAMP (``su/main/tapering``), with the taper functions of the SU library (``_taper.pyx``).
 
 Where a program plainly does not do what its documentation says (see the notes on each) this does what the
 documentation says.
@@ -8,69 +8,40 @@ import numpy as np
 
 from ..container import as_trace_iterator, from_iterable
 from ..stage import Stage, per_trace, stage
+from . import _taperc as _c
 
 __all__ = ['taper', 'ramp']
 
 F32 = np.float32
-_EPS = 3.8090232  # exp(-EPS*EPS) = 5e-7, the "noise" level (see sugain)
+_TAPER_TYPES = (1, 2, 3, 4, 5)
 
 
-# the envelopes of the taper types, as functions of f going from 0 to 1
-def _linear(f):
-    return f
-
-
-def _sine(f):
-    return np.sin(np.pi * f / 2.0)
-
-
-def _cosine(f):
-    return 0.5 * (1.0 - np.cos(np.pi * f))
-
-
-def _gaussian_3_8(f):
-    x = _EPS * (1 - f)
-    return np.exp(-(x * x))
-
-
-def _gaussian_2(f):
-    x = 2.0 * (1 - f)
-    return np.exp(-(x * x))
-
-
-_TAPER_TYPES = {1: _linear, 2: _sine, 3: _cosine, 4: _gaussian_3_8, 5: _gaussian_2}
-
-
-def _time_taper(x, t1, t2, envelope, dt_ms):
-    """Taper the start (t1 ms) and the end (t2 ms) of the trace x in place"""
-    n = x.shape[0]
-    nt1 = int(F32(t1) / F32(dt_ms) + F32(1))
-    nt2 = int(F32(t2) / F32(dt_ms) + F32(1))
-    if nt1 > 1:
-        f = np.arange(nt1) / nt1
-        x[:nt1] *= envelope(f).astype(np.float32)
-    if nt2 > 1:
-        f = np.arange(nt2) / nt2
-        # (sutaper puts the first of these on x[n], one past the end of the trace, so that the last sample gets the
-        # weight that is meant for the one before it. Here the last sample has the first weight, as the first has.)
-        x[n - 1 - np.arange(nt2)] *= envelope(f).astype(np.float32)
+def _on_parts(x, func):
+    """func (which changes a float32 array in place) applied to x, or to the real and the imaginary part of a complex x"""
+    if np.iscomplexobj(x):
+        real, imag = np.ascontiguousarray(x.real, dtype=np.float32), np.ascontiguousarray(x.imag, dtype=np.float32)
+        func(real)
+        func(imag)
+        return (real + 1j * imag).astype(np.complex64)
+    x = np.ascontiguousarray(x, dtype=np.float32)
+    func(x)
+    return x
 
 
 def _taper(upstream, tbeg=0.0, tend=0.0, *, type=1, tr1=0, tr2=None, min=0.0, ntr=None):
     if min > 1.0:
         raise ValueError("min must be less than 1")
     if type not in _TAPER_TYPES:
-        raise ValueError(f"taper type {type!r} must be one of {sorted(_TAPER_TYPES)}")
+        raise ValueError(f"taper type {type!r} must be one of {list(_TAPER_TYPES)}")
     if tr2 is None:
         tr2 = tr1
     if tr1 < 0 or tr2 < 0:
         raise ValueError("tr1 and tr2 must not be negative")
-    envelope = _TAPER_TYPES[type]
     source = as_trace_iterator(upstream)
 
     def trace_weight(f):
-        # only the linear taper of whole traces knows about the minimum amplitude
-        return min + (1.0 - min) * f if type == 1 else float(envelope(np.float64(f)))
+        # (only the linear taper of whole traces knows about the minimum amplitude)
+        return _c.envelope(type, f, min, 1.0)
 
     def gen():
         total = ntr if ntr is not None else source.n_traces
@@ -94,7 +65,7 @@ def _taper(upstream, tbeg=0.0, tend=0.0, *, type=1, tr1=0, tr2=None, min=0.0, nt
                 tlen = (x.shape[0] - 1) * dt_ms
                 if tbeg + tend > tlen:
                     raise ValueError(f"sum of tapers tbeg={tbeg}, tend={tend} exceeds trace length ({tlen} ms)")
-                _time_taper(x, tbeg, tend, envelope, dt_ms)
+                x = _on_parts(x, lambda a: _c.time_taper(a, tbeg, tend, type, dt_ms))
             yield trace.replace(x)
 
     return from_iterable(gen(), n_traces=source.n_traces)
@@ -139,11 +110,7 @@ def _ramp(upstream, *, tmin=None, tmax=None, dt=None):
         down_start = t_end if tmax is None else tmax
         n1 = _nint(max(0.0, (up_end - t_first) / sample_dt))
         n2 = _nint(max(0.0, (t_end - down_start) / sample_dt))
-        x = np.array(trace)
-        if n1:
-            x[:n1] *= (np.arange(n1) + 1.0).astype(np.float32) / F32(n1)
-        if n2:
-            x[n - n2:] *= (n2 - np.arange(n2)).astype(np.float32) / F32(n2)
+        x = _on_parts(np.array(trace), lambda a: _c.ramp(a, n1, n2))
         return trace.replace(x)
 
     return per_trace(upstream, ramp_trace, on_complex='native')

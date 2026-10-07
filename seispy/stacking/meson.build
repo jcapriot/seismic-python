@@ -1,12 +1,12 @@
-module_path = 'seispy/noise'
+module_path = 'seispy/stacking'
 
 python_sources = [
     '__init__.py',
 ]
 
 py.extension_module(
-    '_rng',
-    '_rng.pyx',
+    '_kernels',
+    '_kernels.pyx',
     cython_args: cython_args,
     c_args: cython_c_args,
     install: true,

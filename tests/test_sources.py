@@ -177,7 +177,7 @@ def test_sweep_tapers(taper, kind):
     plain = np.asarray(only(waveforms.vibro_linear(tv=4.0, dt=0.004, t1=0.0, t2=0.0)))
     tapered = np.asarray(only(waveforms.vibro_linear(tv=4.0, dt=0.004, t1=0.5, t2=0.5, taper=taper)))
     envelope = tapered / np.where(plain == 0, np.nan, plain)
-    n1 = int(0.5 / 0.004 + 1)
+    n1 = int(np.float32(0.5) / np.float32(0.004) + np.float32(1))  # (the number of samples is found in single precision)
     f = np.arange(n1) / n1
     expected = {1: f, 2: np.sin(np.pi * f / 2), 3: 0.5 * (1 - np.cos(np.pi * f)),
                 4: np.exp(-((3.8090232 * (1 - f)) ** 2)), 5: np.exp(-((2.0 * (1 - f)) ** 2))}[taper]

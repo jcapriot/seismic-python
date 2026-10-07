@@ -1,5 +1,6 @@
 """
-Unary arithmetic operations on traces, the operations of SUOP (``suop op=...``).
+Unary arithmetic operations on traces, the operations of SUOP (``suop op=...``), and (in ``_panels.py``) the operations on
+panels: SUMIX and SUOP2.
 
 Each operation is a stage of its own, with its own parameters::
 
@@ -134,10 +135,13 @@ despike = _define(
     'despike', _o.despike, "Despiking with a median filter of nw samples.", window=True, needs_window=True,
 )
 
+from ._panels import mix, sum2, diff2, prod2, quo2, ptsum, ptdiff, ptprod, ptquo, zipper, zippol  # noqa: E402
+
 __all__ = [
     'abs', 'ssqrt', 'sqr', 'ssqr', 'sgn', 'exp', 'sexp', 'slog', 'slog2', 'slog10', 'db', 'cos', 'sin', 'tan', 'cosh',
     'sinh', 'tanh', 'neg', 'nop', 'posonly', 'negonly', 'inv', 'mod2pi', 's2v', 's2vm', 'd2m', 'cnorm',
     'norm', 'avg', 'rmsamp', 'sum', 'integ',
     'refl', 'diff', 'drv2', 'drv4', 'spike', 'lnza', 'saf', 'freq',
     'mean', 'std', 'var', 'despike',
+    'mix', 'sum2', 'diff2', 'prod2', 'quo2', 'ptsum', 'ptdiff', 'ptprod', 'ptquo', 'zipper', 'zippol',
 ]

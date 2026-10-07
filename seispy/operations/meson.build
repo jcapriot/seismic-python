@@ -3,6 +3,7 @@ module_path = 'seispy/operations'
 python_sources = [
     '__init__.py',
     '_numpy_ops.py',
+    '_panels.py',
 ]
 
 cython_sources = [

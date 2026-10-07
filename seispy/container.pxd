@@ -28,6 +28,7 @@ cdef:
         int data_type                   # SPY_FLOAT32 or SPY_COMPLEX64. n_sample counts samples (not floats)
         int coord_unit                  # CoordinateUnit of the x and y of tx_loc and rx_loc (z is an elevation)
         int trace_type                  # trace identification code of SEG-Y (and SU's trid): 1 seismic data, 2 dead, ... 0 not set
+        int fold                        # the number of traces that were stacked to make this one (0 = not set, one trace)
         int iline                       # the in-line and cross-line numbers of the bin of a 3D survey (0 = not set)
         int xline
         double source_static            # static shifts (s) of the source and of the receiver (SEG-Y: positive is later)

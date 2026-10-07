@@ -172,3 +172,46 @@ def test_refcon_checks():
         refcon([], xy=-1)
     with pytest.raises(ValueError):
         run(refcon(traces(DATA[:2]), xy=5), traces(DATA))
+
+
+# ------------------------------------------------------------------------------------------------- the generators
+def test_generators_make_the_numbers_of_the_cwp_library():
+    from seispy.noise import _rng
+
+    for seed in (0, 1, 7, 12345, 2**20 + 3, -9):
+        npt.assert_array_equal(_rng.Uniform(seed).draw(500), _rng.global_uniform(seed, 500))
+        npt.assert_array_equal(_rng.Normal(seed).draw(500), _rng.global_normal(seed, 500))
+
+
+def test_generators_do_not_share_state():
+    from seispy.noise import _rng
+
+    a, b = _rng.Uniform(5), _rng.Uniform(5)
+    first = [a.next() for _ in range(5)]
+    for _ in range(3):
+        b.next()  # (does not change a)
+    again = _rng.Uniform(5)
+    assert first == [again.next() for _ in range(5)]
+    c, d = _rng.Normal(2), _rng.Uniform(2)
+    d.next()
+    assert [c.next() for _ in range(4)] == list(_rng.Normal(2).draw(4))
+
+
+def test_generators_have_the_right_distributions():
+    from seispy.noise import _rng
+
+    u = _rng.Uniform(3).draw(50000)
+    assert u.min() >= 0.0 and u.max() < 1.0 and u.mean() == pytest.approx(0.5, abs=0.01)
+    g = _rng.Normal(3).draw(50000)
+    assert g.mean() == pytest.approx(0.0, abs=0.02) and g.std() == pytest.approx(1.0, abs=0.02)
+
+
+def test_the_noise_is_the_noise_of_su():
+    from seispy.noise import _rng
+
+    quiet = np.zeros((2, 50), dtype=np.float32)
+    quiet[:, 0] = 1.0
+    out = arr(run(addnoise(sn=1.0, seed=4), traces(quiet))) - quiet
+    expected = _rng.global_normal(4, 100).reshape(2, 50)
+    scale = out.flat[1] / expected.flat[1]  # (the scale of the noise is one number)
+    npt.assert_allclose(out, expected * scale, rtol=1e-4, atol=1e-6)

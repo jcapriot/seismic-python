@@ -81,3 +81,46 @@ def dgauss(double dt, int nt, double t0, float fpeak, int n, int sign):
         with nogil:
             su.deriv_n_gauss(dt, nt, t0, fpeak, n, &w[0], sign, 0)
     return np.asarray(w).astype(np.float32)
+
+
+def vibro_linear(int nt, float fs, float fe, float T, float dt, float phz):
+    cdef float[::1] w = np.zeros(nt, dtype=np.float32)
+    if nt > 0:
+        with nogil:
+            su.su_vibro_linear(&w[0], nt, fs, fe, T, dt, phz)
+    return np.asarray(w)
+
+
+def vibro_segments(int nt, const float[::1] freq, const float[::1] time, float T, float dt, float phz):
+    cdef int isegm = time.shape[0]
+    if freq.shape[0] != isegm + 1:
+        raise ValueError("There is one more frequency than there are segments")
+    cdef float[::1] w = np.zeros(nt, dtype=np.float32)
+    if nt > 0 and isegm > 0:
+        with nogil:
+            su.su_vibro_segments(&w[0], nt, &freq[0], &time[0], isegm, T, dt, phz)
+    return np.asarray(w)
+
+
+def vibro_octave(int nt, float fs, float fe, float T, float dt, float swconst, float phz):
+    cdef float[::1] w = np.zeros(nt, dtype=np.float32)
+    if nt > 0:
+        with nogil:
+            su.su_vibro_octave(&w[0], nt, fs, fe, T, dt, swconst, phz)
+    return np.asarray(w)
+
+
+def vibro_hertz(int nt, float fs, float fe, float T, float dt, float swconst, float phz):
+    cdef float[::1] w = np.zeros(nt, dtype=np.float32)
+    if nt > 0:
+        with nogil:
+            su.su_vibro_hertz(&w[0], nt, fs, fe, T, dt, swconst, phz)
+    return np.asarray(w)
+
+
+def vibro_tpower(int nt, float fs, float fe, float T, float dt, float swconst, float phz):
+    cdef float[::1] w = np.zeros(nt, dtype=np.float32)
+    if nt > 0:
+        with nogil:
+            su.su_vibro_tpower(&w[0], nt, fs, fe, T, dt, swconst, phz)
+    return np.asarray(w)

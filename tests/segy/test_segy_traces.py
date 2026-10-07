@@ -343,3 +343,12 @@ def test_inline_and_crossline_numbers_are_written():
     tr = Trace(np.zeros(4, dtype=np.float32), d_sample=0.004).replace(iline=7, xline=-3)
     h = SEGYTrace.from_seispy(tr).trace_header
     assert h['iline'] == 7 and h['xline'] == -3
+
+
+def test_fold_is_read_and_written(tmp_path):
+    from seispy.io.segy_standard import SEGYTrace
+
+    assert _read_patched(tmp_path, [(32, '>H', 24)]).header['fold'] == 24  # (bytes 33-34)
+    assert _read_patched(tmp_path, []).header['fold'] == 0
+    tr = Trace(np.zeros(4, dtype=np.float32), d_sample=0.004).replace(fold=12)
+    assert SEGYTrace.from_seispy(tr).trace_header['fold'] == 12

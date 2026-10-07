@@ -1,9 +1,12 @@
 """
 Synthetic data that does not need the SU library: SUNULL and SURANDSPIKE.
 """
+import time
+
 import numpy as np
 
 from ..container import Trace, from_iterable
+from ..noise import _rng
 
 __all__ = ['null', 'randspike']
 
@@ -32,11 +35,11 @@ def randspike(*, n1=500, n2=100, dt=0.002, nspk=20, amax=0.2, mode=1, seed=None)
     each, with random times and amplitudes in (-``amax``, ``amax``).
 
     With ``mode=1`` (the default) every trace has different spikes, with ``mode=2`` they are the same on every trace.
-    ``seed`` makes it repeatable, by default it is not.
+    ``seed`` makes it repeatable, by default it is the time. The random numbers are those of the generator of the SU
+    library, so the spikes are those that surandspike makes for the same seed.
 
     The spikes are on samples 0 to ``n1 - 2``. (surandspike puts them on samples 1 to ``n1``, one of them past the
-    end of the trace.) Where two spikes are on one sample the last one is kept. This uses numpy's random numbers, so the
-    spikes are not the ones that SU's generator makes for the same seed.
+    end of the trace.) Where two spikes are on one sample the last one is kept.
     """
     if mode not in (1, 2):
         raise ValueError("mode must be 1 or 2")
@@ -47,22 +50,25 @@ def randspike(*, n1=500, n2=100, dt=0.002, nspk=20, amax=0.2, mode=1, seed=None)
     if dt <= 0.0:
         raise ValueError(f"dt={dt} must be positive")
     amax = abs(amax)
-    random = np.random.default_rng(seed)
-    t_max = (n1 - 1) * dt
+    seed = int(time.time()) if seed is None else int(seed)
+    f32 = np.float32
+    t_max = f32(n1 - 1) * f32(dt)
 
-    def spikes():
+    def spikes(generator):
         data = np.zeros(n1, dtype=np.float32)
-        times = random.random(nspk) * t_max
-        amplitudes = 2.0 * (0.5 - random.random(nspk)) * amax
-        for time, amplitude in zip(times, amplitudes):
-            data[int(time / dt)] = amplitude
+        # (a time, then an amplitude, for each spike)
+        draws = generator.draw(2 * nspk).reshape(nspk, 2)
+        for u_time, u_amplitude in draws:
+            time_of = f32(u_time) * t_max
+            data[int(time_of / f32(dt))] = 2 * (f32(0.5) - f32(u_amplitude)) * f32(amax)
         return data
 
     def traces():
+        generator = _rng.Uniform(seed)
         data = None
         for i in range(n2):
             if mode == 1 or data is None:
-                data = spikes()
+                data = spikes(generator)
             yield Trace(data.copy(), d_sample=dt, trace_type=1).replace(
                 trace_id=i + 1, ensemble_number=1, ensemble_trace_number=i + 1
             )

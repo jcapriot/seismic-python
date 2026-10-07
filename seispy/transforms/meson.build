@@ -6,7 +6,7 @@ python_sources = [
     '_timefreq.py',
 ]
 
-foreach name : ['_hilbert', '_unwrap']
+foreach name : ['_hilbert', '_unwrap', '_kernels']
     py.extension_module(
         name,
         name + '.pyx',

@@ -19,7 +19,9 @@ def _amp_at(trace, f, dt=0.002):
 
 
 def test_only_stages_are_public():
-    assert sorted(seispy.filters.__all__) == ['bfilt', 'filter', 'frac', 'minphase', 'phase', 'tvband']
+    assert sorted(seispy.filters.__all__) == [
+        'bfilt', 'filter', 'frac', 'median', 'medmix', 'minphase', 'phase', 'tvband',
+    ]
     assert not hasattr(seispy.filters, 'butterworth_bandpass')
 
 

@@ -1,6 +1,6 @@
 """
 Windowing and muting programs: SUMUTE, SUWIND and SUKILL (``su/main/windowing_sorting_muting``), and SUVLENGTH
-(``su/main/operations``).
+(``su/main/operations``), and SUSORT and SUMIXGATHERS.
 
 SU picks traces and positions on traces by header words (``key=offset``). Here the key is the name of one of the
 values in ``trace.header`` (see `seispy.container.Trace`), or a function of a trace that gives the number. SU's default
@@ -17,8 +17,9 @@ import numpy as np
 
 from ..container import as_trace_iterator, from_iterable
 from ..stage import Stage, header_value as _key_value, per_trace
+from . import _mutec
 
-__all__ = ['mute', 'wind', 'kill', 'vlength']
+__all__ = ['mute', 'wind', 'kill', 'vlength', 'sort', 'mixgathers']
 
 _abs, _min, _max = abs, min, max
 
@@ -33,67 +34,44 @@ def _half(n):
 
 
 # ----------------------------------------------------------------------------------------------------------- mute
+def _on_parts(x, func):
+    """func (which changes a float32 array in place) applied to x, or to the real and the imaginary part of a complex x"""
+    if np.iscomplexobj(x):
+        real, imag = np.ascontiguousarray(x.real, dtype=np.float32), np.ascontiguousarray(x.imag, dtype=np.float32)
+        func(real)
+        func(imag)
+        return (real + 1j * imag).astype(np.complex64)
+    x = np.ascontiguousarray(x, dtype=np.float32)
+    func(x)
+    return x
+
+
+# (each mode is a function of the SU library, see _mutec.pyx and sumute.c)
 def _mute_above(x, t, tmin, dt, taper, **_):
     """mode 0: mute above the curve"""
-    nt = x.shape[0]
-    nmute = _min(_nint((t - tmin) / dt), nt)
-    if nmute > 0:
-        x[:nmute] = 0
-    for i in range(len(taper)):
-        j = i + nmute
-        if 0 < j < nt:
-            x[j] *= taper[i]
+    return _on_parts(x, lambda a: _mutec.above(a, t, tmin, dt, taper))
 
 
 def _mute_below(x, t, tmin, dt, taper, **_):
     """mode 1: mute below the curve"""
-    nt = x.shape[0]
-    nmute = _max(0, _nint((tmin + nt * dt - t) / dt))
-    nzero = _min(nmute, nt)
-    if nzero > 0:
-        x[nt - nzero:] = 0
-    for i in range(len(taper)):
-        if nt > nmute + i and nmute + i > 0:
-            x[nt - nmute - 1 - i] *= taper[i]
-
-
-def _mute_zone(x, ntair, nmute, taper):
-    """Mute a zone of nmute samples around sample ntair, tapering out of it on both sides"""
-    nt = x.shape[0]
-    half = _half(nmute)
-    top = _min(_max(0, ntair - half), nt)
-    bottom = _min(nt, ntair + half)
-    if bottom > top:
-        x[top:bottom] = 0
-    for i in range(len(taper)):
-        j = ntair - half - i
-        if 0 < j < nt:
-            x[j] *= taper[i]
-    for i in range(len(taper)):
-        j = ntair + half + i
-        if 0 <= j < nt:
-            x[j] *= taper[i]
+    return _on_parts(x, lambda a: _mutec.below(a, t, tmin, dt, taper))
 
 
 def _mute_line(x, t, tmin, dt, taper, fval, linvel, tm0, **_):
     """mode 2: mute below and above a straight line (an air wave), t is the width of the zone"""
-    nmute = _nint((tmin + t) / dt)
-    ntair = _nint(tm0 / dt + fval / linvel / dt)
-    _mute_zone(x, ntair, nmute, taper)
+    return _on_parts(x, lambda a: _mutec.line(a, t, tmin, dt, taper, fval, linvel, tm0))
 
 
 def _mute_hyperbola(x, t, tmin, dt, taper, fval, linvel, tm0, **_):
     """mode 3: mute below and above a hyperbola, t is the width of the zone"""
-    nmute = _nint((tmin + t) / dt)
-    ntair = _nint(math.sqrt((tm0 / dt) ** 2 + (fval / linvel / dt) ** 2))
-    _mute_zone(x, ntair, nmute, taper)
+    return _on_parts(x, lambda a: _mutec.hyperbola(a, t, tmin, dt, taper, fval, linvel, tm0))
 
 
 def _mute_polygon(x, t, tmin, dt, taper, fval, xmute, twindow, **_):
     """mode 4: mute below and above the polygonal line, with the width of the zone from twindow"""
     # (sumute interpolates twindow at a variable that it never sets, here it is the key value like for tmute)
     tw = float(np.interp(fval, xmute, twindow, left=twindow[0], right=twindow[-1]))
-    _mute_zone(x, _nint(t / dt), _nint(tw / dt), taper)
+    return _on_parts(x, lambda a: _mutec.polygon(a, t, tw, dt, taper))
 
 
 _MUTE_MODES = {0: _mute_above, 1: _mute_below, 2: _mute_line, 3: _mute_hyperbola, 4: _mute_polygon}
@@ -118,8 +96,7 @@ def _mute(
         raise ValueError("linear velocity can't be 0")
     if ntaper < 0:
         raise ValueError("ntaper must not be negative")
-    k = np.arange(ntaper)
-    taper = np.sin((k + 1) * np.pi / (2 * _max(ntaper, 1))) ** 2  # a sine squared taper
+    taper = _mutec.taper_weights(ntaper)  # (a sine squared taper)
     apply_mode = _MUTE_MODES[mode]
 
     def mute_trace(trace):
@@ -134,9 +111,8 @@ def _mute(
         t = float(np.interp(fval, xmute, tmute, left=tmin, right=tmute[-1]))
         if absolute:
             fval = _abs(fval)
-        x = np.array(trace)
-        apply_mode(
-            x, t=t, tmin=tmin, dt=dt, taper=taper.astype(np.float32), fval=fval,
+        x = apply_mode(
+            np.array(trace), t=t, tmin=tmin, dt=dt, taper=taper, fval=fval,
             linvel=linvel, tm0=tm0, xmute=xmute, twindow=twindow,
         )
         return trace.replace(x)
@@ -366,3 +342,87 @@ def vlength(ns=None):
     if ns is not None and ns < 1:
         raise ValueError(f"ns={ns} must be at least 1")
     return Stage(_vlength, parallelism='serial' if ns is None else 'trace', name='vlength', ns=ns)
+
+
+# --------------------------------------------------------------------------------------------------------- sort
+def _sort_key(key):
+    """(key, descending) from a header name that may have a + or - in front, a function of a trace, or a pair"""
+    if isinstance(key, tuple):
+        return key[0], bool(key[1])
+    if callable(key):
+        return key, False
+    name = str(key)
+    return name.lstrip('+-'), name.startswith('-')
+
+
+def _sort(upstream, *keys):
+    keys = [_sort_key(k) for k in (keys or ('ensemble_number',))]
+    source = as_trace_iterator(upstream)
+
+    def traces():
+        panel = list(source)
+        # one stable sort for each key, from the last: the first key is the main one
+        for key, descending in reversed(keys):
+            panel.sort(key=lambda trace: _key_value(trace, key), reverse=descending)
+        yield from panel
+
+    return from_iterable(traces(), n_traces=source.n_traces)
+
+
+def sort(*keys):
+    """Sort traces by header values (SUSORT): ``sort('ensemble_number', 'offset')`` for the gathers, and within each by
+    offset. A ``-`` in front of a name (``'-offset'``) sorts that one from the largest. A key can also be a function of a
+    trace, or a pair ``(function, descending)``. The default is ``'ensemble_number'`` (SU's cdp).
+
+    All of the traces are read before the first is output, so use it on what fits in memory. Traces with the same values
+    stay in the order that they came in.
+    """
+    for key in keys:
+        _sort_key(key)
+    return Stage(_sort, *keys, parallelism='serial', name='sort')
+
+
+# ------------------------------------------------------------------------------------------------------ mixgathers
+def _mixgathers(upstream, other, *, scaling=False):
+    source = as_trace_iterator(upstream)
+    second = as_trace_iterator(other)
+
+    def present(offset, offsets):
+        # (within a tenth of a percent of an offset of the first gather, as sumixgathers)
+        for h in offsets:
+            if h > 0 and 0.999 * h < offset < 1.001 * h:
+                return True
+            if h < 0 and 1.001 * h < offset < 0.999 * h:
+                return True
+            if h == 0 and offset == 0:
+                return True
+        return False
+
+    def traces():
+        panel = list(source)
+        offsets = [t.header['offset'] for t in panel]
+        extra = []
+        for trace in second:
+            offset = trace.header['offset']
+            if present(offset, offsets):
+                continue
+            if scaling and offset != 0:
+                # (a boost with the offset, which sumixgathers has for traces that are from an interpolation)
+                trace = trace.replace(np.asarray(trace) * (1.0 + 0.03 * (abs(int(offset)) / 1000.0)))
+            extra.append(trace)
+        # the gather in order of offset (sumixgathers puts the new traces before all of the traces of the first gather)
+        merged = sorted(panel + extra, key=lambda t: t.header['offset'])
+        yield from merged
+
+    return from_iterable(traces())
+
+
+def mixgathers(other, *, scaling=False):
+    """Fill the gaps of a gather with the traces of another (SUMIXGATHERS): the traces of the stream are kept, and the
+    traces of ``other`` (an iterable of traces) are added where the stream has no trace at that offset.
+
+    The gather that comes out is in order of offset. (sumixgathers writes the added traces first and then the gather.) With
+    ``scaling`` the added traces are multiplied by ``1 + .03 |offset| / 1000``. Both are whole gathers: all of the traces
+    are read before the first is output.
+    """
+    return Stage(_mixgathers, other, parallelism='serial', name='mixgathers', scaling=scaling)

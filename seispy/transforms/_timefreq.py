@@ -12,7 +12,7 @@ SU programs write it to trace header words that are not here) is found as:
 * ``gabor``: ``fmin + k band`` for the center of the filter of trace ``k``;
 * ``cwt``: the scales are ``base ** (first + k expinc)`` (a smaller scale is a higher frequency).
 
-These use numpy's FFT of the trace as it is, where the SU programs pad the traces to a length that their FFT is fast
+These use numpy's FFT of the trace as it is (what is done between the transforms is a function of the SU library, see ``_kernels.pyx``), where the SU programs pad the traces to a length that their FFT is fast
 for. Not supported: the ``holder`` option of ``sugabor`` and ``sucwt`` (an estimate of the regularity), which index
 past the arrays that they have, and the wavelet types of ``sucwt`` that its program does not have (``wtype`` 1 and
 2).
@@ -21,7 +21,9 @@ import numpy as np
 
 from ..container import as_trace_iterator, from_iterable
 from ..stage import Stage, stage
-from . import _hilbert
+from . import _hilbert, _kernels
+from ..attributes import _attributes
+from ..convolution import _convolve
 
 __all__ = ['st', 'gabor', 'cwt']
 
@@ -68,16 +70,14 @@ def _st(upstream, *, fmin=0.0, fmax=None, dt=None):
         last = int(f_max / d1 + 1 + 0.5)
         if n == 0 or last < first:
             return np.zeros((0, n))
-        # the analytic signal: the positive frequencies twice, the negative ones 0
-        h = np.fft.fft(x)
-        h[1:(n + 1) // 2] *= 2.0
-        h[n // 2 + 1:] = 0.0
-        index = np.arange(n)
-        wrapped = np.minimum(index, n - index)  # (the Gaussian is symmetric, and its negative frequencies wrap around)
+        # the transform of the analytic signal (in the convention of the SU transform: the conjugate of numpy's), from the SU library
+        h = np.ascontiguousarray(np.conj(np.fft.fft(x)), dtype=np.complex64)
+        _kernels.st_analytic(h)
         rows = np.empty((last - first + 1, n))
         for row, k in enumerate(range(first, last + 1)):
-            gaussian = np.exp(-2.0 * np.pi ** 2 * wrapped ** 2 / (k * k))
-            rows[row] = np.abs(np.fft.ifft(h[(k + index) % n] * gaussian))
+            g = _kernels.st_row(h, k)  # (the row, in frequency)
+            # (the inverse transform with the sign -1 of the SU transform is numpy's forward)
+            rows[row] = np.abs(np.fft.fft(g)) / n
         return rows
 
     return _panel(upstream, rows_of)
@@ -115,20 +115,14 @@ def _gabor(upstream, *, fmin=0.0, fmax=None, band=None, beta=3.0, alpha=None, dt
             return np.zeros((0, n))
         n_fft = n + n % 2
         spectrum = np.fft.rfft(x, n_fft)
-        n_freq = n_fft // 2 + 1
-        df = 1.0 / (n_fft * sample_dt)
-        freqs = np.arange(n_freq) * df
-        index = np.arange(n_freq)
         rows = np.empty((n_filters, n))
         for i in range(n_filters):
             center = fmin + i * width
-            lower = max(_nint((center - width / 2.0) / df), 0)
-            upper = min(_nint((center + width / 2.0) / df), n_freq)
-            window = (index >= lower) & (index <= upper)
-            filtered = np.fft.irfft(spectrum * np.where(window, np.exp(-4.0 * steep * (freqs - center) ** 2), 0.0), n_fft)
-            narrow = filtered[:n].astype(F32)
-            quadrature = _hilbert.hilbert(np.ascontiguousarray(narrow))  # (the Hilbert transform of SU)
-            rows[i] = np.sqrt(narrow.astype(np.float64) ** 2 + quadrature.astype(np.float64) ** 2)
+            filt = _kernels.gabor_filter(center, sample_dt, n_fft, steep, width, 1.0)  # (the function of the SU library)
+            filtered = np.fft.irfft(spectrum * filt, n_fft)
+            narrow = np.ascontiguousarray(filtered[:n], dtype=F32)
+            quadrature = _hilbert.hilbert(narrow)  # (the Hilbert transform of SU)
+            rows[i] = _attributes.envelope(narrow, quadrature)  # (and the amplitude of the two of them)
         return rows
 
     return _panel(upstream, rows_of)
@@ -149,13 +143,6 @@ gabor = stage(_gabor, parallelism='trace', name='gabor', validate=True)
 
 
 # ------------------------------------------------------------------------------------------------------------ cwt
-def _mexican_hat(nwavelet, xmin, xcenter, xmax, sigma):
-    dx = (xmax - xmin) / (nwavelet - 1)
-    x = xmin + np.arange(nwavelet) * dx - xcenter
-    multiplier = 1.0 / (sigma ** 3 * np.sqrt(2.0 * np.pi))
-    return multiplier * (x * x / (sigma * sigma) - 1.0) * np.exp(-x * x / (2.0 * sigma * sigma)), dx
-
-
 def _cwt(upstream, *, base=10.0, first=-1.0, expinc=0.01, last=1.5, nwavelet=1024, xmin=-20.0, xcenter=0.0, xmax=20.0,
          sigma=1.0):
     if nwavelet <= 1:
@@ -168,39 +155,25 @@ def _cwt(upstream, *, base=10.0, first=-1.0, expinc=0.01, last=1.5, nwavelet=102
         raise ValueError("xmax must be more than xmin")
     if sigma <= 0.0:
         raise ValueError("sigma must be positive")
-    wavelet, dx = _mexican_hat(nwavelet, xmin, xcenter, xmax, sigma)
+    # the integral of the wavelet, and a filter of it for each scale, from the SU library
+    wavelet_sum, dx = _kernels.cwt_wavelet(nwavelet, xmin, xcenter, xmax, sigma)
     width = dx * (nwavelet - 1)
     # the scales, from base^first up to base^last (as many as there are in the range)
     n_scales = int(np.floor((last - first) / expinc + 1e-9)) + 1
     if n_scales < 1:
         raise ValueError("There are no scales: last must be at least first.")
     scales = base ** (first + np.arange(n_scales) * expinc)
-    wavelet_sum = np.cumsum(wavelet) * dx
-    # a filter for each scale: the sum of the wavelet, stretched by the scale, and flipped
-    filters = []
-    for scale in scales:
-        n_conv = 1 + int(scale * width)
-        positions = (np.arange(n_conv) / (scale * dx)).astype(np.int64)
-        filters.append(wavelet_sum[np.minimum(positions, nwavelet - 1)][::-1])
+    filters = [_kernels.cwt_filter(wavelet_sum, float(scale), dx, width) for scale in scales]
 
     def rows_of(trace):
         x = np.asarray(trace).astype(np.float64)
         n = x.shape[0]
         rows = np.empty((n_scales, n))
         for i, (scale, filt) in enumerate(zip(scales, filters)):
-            n_conv = filt.shape[0]
-            full = np.convolve(x, filt)[:n]  # (the convolution is kept to the length of the trace)
-            shift = n_conv // 2 - 1
-            r = np.zeros(n)
-            if shift >= 0:
-                r[:max(n - shift, 0)] = full[shift:] if shift < n else []
-            else:
-                r[1:] = full[:n - 1]
-            r[1:] = r[1:] - r[:-1].copy()  # (the difference, with the first sample as it is)
-            r *= -np.sqrt(scale)
-            narrow = np.ascontiguousarray(r.astype(F32))
+            full = _convolve(x, filt, n)  # (the convolution is kept to the length of the trace)
+            narrow = _kernels.cwt_trace(np.ascontiguousarray(full, dtype=F32), filt.shape[0], float(scale))
             quadrature = _hilbert.hilbert(narrow)
-            rows[i] = np.sqrt(narrow.astype(np.float64) ** 2 + quadrature.astype(np.float64) ** 2)
+            rows[i] = _attributes.envelope(narrow, quadrature)
         return rows
 
     return _panel(upstream, rows_of)

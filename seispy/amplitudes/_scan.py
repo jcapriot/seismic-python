@@ -5,6 +5,7 @@ import numpy as np
 
 from ..container import as_trace_iterator, from_iterable
 from ..stage import stage
+from . import _pgc as _pgc_c
 
 __all__ = ['pgc']
 
@@ -17,16 +18,9 @@ def _pgc(upstream, *, ntrscan=200, lwindow=1.0):
     source = as_trace_iterator(upstream)
 
     def gain_function(total, count, dt):
-        n = total.shape[0]
         lw = int(0.5 * lwindow / dt + 0.5)
-        # the sum of the scanned amplitudes in the window around each sample, which has samples j - lw to j + lw - 1
-        cumulative = np.concatenate(([0.0], np.cumsum(total)))
-        j = np.arange(n)
-        low = np.maximum(j - lw, 0)
-        high = np.minimum(j + lw, n)
-        window_sum = cumulative[high] - cumulative[low]
-        window_sum = np.where(window_sum == 0.0, 1.0, window_sum)
-        return ((high - low) * count / window_sum).astype(np.float32)
+        # (the function of the SU library)
+        return _pgc_c.gain_function(total.astype(np.float32), count, lw)
 
     def traces():
         scanned = []

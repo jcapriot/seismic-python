@@ -31,6 +31,11 @@ def test_cmp_gathers(cookbook):
     assert all(np.isfinite(g).all() for g in gathers)
 
 
+def test_stack_the_cmp_gathers(cookbook):
+    data, folds, offsets = cookbook.stack_the_cmp_gathers()
+    assert data.shape == (5, 251) and folds == [6] * 5 and offsets == [0.0] * 5
+
+
 def test_wavelet_spectrum_peaks_near_its_frequency(cookbook):
     peak, spectrum = cookbook.spectrum_of_a_wavelet()
     assert peak == pytest.approx(30.0, abs=3.0)

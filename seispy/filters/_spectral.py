@@ -5,6 +5,7 @@ numpy's FFT on the trace as it is (the SU programs zero-pad each trace for their
 import numpy as np
 
 from ..stage import per_trace
+from . import _kernels
 
 
 def _nint(x):
@@ -20,18 +21,17 @@ def _cwp_fft(z, sign):
 
 
 def _kolmogoroff(cx, pnoise, sign1, sign2):
-    """Spectral factorization: the spectrum of the minimum phase wavelet that has the amplitudes of cx"""
-    n = cx.shape[0]
-    r = np.abs(cx)
-    rmax = r.max()
-    r = np.maximum(r / rmax, pnoise)
+    """Spectral factorization: the spectrum of the minimum phase wavelet that has the amplitudes of cx (the steps of it that are
+    not Fourier transforms are functions of the SU library)"""
+    work = np.ascontiguousarray(cx, dtype=np.complex64)
     # the log of the power spectrum, as a (real) function of time: the cepstrum
-    cepstrum = _cwp_fft(np.log(r * r).astype(np.complex128), sign2) / n
+    rmax = _kernels.kolmogoroff_log(work, pnoise)
+    cepstrum = np.ascontiguousarray(_cwp_fft(work, sign2), dtype=np.complex64)
     # fold it, keeping only the causal part (which is what makes the wavelet minimum phase)
-    cepstrum[0] *= 0.5
-    cepstrum[n // 2] *= 0.5
-    cepstrum[n // 2 + 1:] = 0.0
-    return np.exp(_cwp_fft(cepstrum, sign1)) * rmax
+    _kernels.kolmogoroff_fold(cepstrum)
+    spectrum = np.ascontiguousarray(_cwp_fft(cepstrum, sign1), dtype=np.complex64)
+    _kernels.kolmogoroff_exp(spectrum, rmax)
+    return spectrum
 
 
 def _minphase(upstream, *, sign1=1, sign2=-1, pnoise=1.0e-9):
@@ -70,21 +70,8 @@ def _minphase(upstream, *, sign1=1, sign2=-1, pnoise=1.0e-9):
 # --------------------------------------------------------------------------------------------------------- tvband
 def _band_filter(corners, n_fft, sample_dt):
     """The amplitude (for the nfft // 2 + 1 frequencies of the transform) of a bandpass filter with sine squared tapers
-    between the corner frequencies f1, f2 (up) and f3, f4 (down)"""
-    n_freq = n_fft // 2 + 1
-    df = 1.0 / (n_fft * sample_dt)
-    last = n_freq - 1
-    if1 = min(_nint(corners[0] / df), last)
-    if2 = min(_nint(corners[1] / df), last)
-    if3 = min(_nint(corners[2] / df), last)
-    if4 = min(_nint(corners[3] / df), last)
-    amplitude = np.zeros(n_freq)
-    i = np.arange(if1, if2 + 1)
-    amplitude[if1:if2 + 1] = np.sin(0.5 * np.pi / (if2 - if1 + 2) * (i - if1 + 1)) ** 2
-    i = np.arange(if3, if4 + 1)
-    amplitude[if3:if4 + 1] = np.sin(0.5 * np.pi / (if4 - if3 + 2) * (if4 - i + 1)) ** 2
-    amplitude[if2 + 1:if3] = 1.0
-    return amplitude
+    between the corner frequencies f1, f2 (up) and f3, f4 (down), from the SU library"""
+    return _kernels.tvband_filter(np.asarray(corners, dtype=np.float32), n_fft, n_fft // 2 + 1, sample_dt, 1.0)
 
 
 def _tvband(upstream, tf, f, *, dt=None):
@@ -140,14 +127,12 @@ def _tvband(upstream, tf, f, *, dt=None):
             part[lo:hi + 1] = x[lo:hi + 1]
             filtered.append(np.fft.irfft(np.fft.rfft(part, n) * amplitude, n))
 
-        # and fade from one into the next between the centers
-        out = filtered[0].copy()
+        # and fade from one into the next between the centers (from the SU library)
+        pieces = [np.ascontiguousarray(part, dtype=np.float32) for part in filtered]
+        out = pieces[0].copy()
         for j in range(len(centers) - 1):
-            i = np.arange(centers[j], centers[j + 1] + 1)
-            span = centers[j + 1] - centers[j]
-            a = (i - centers[j]) / span if span else np.zeros(i.shape[0])
-            out[i] = (1 - a) * filtered[j][i] + a * filtered[j + 1][i]
-        return trace.replace(out.astype(np.float32))
+            _kernels.tvband_blend(centers[j], centers[j + 1], pieces[j], pieces[j + 1], out)
+        return trace.replace(out)
 
     return per_trace(upstream, tvband_trace)
 

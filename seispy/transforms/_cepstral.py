@@ -15,16 +15,11 @@ length, here it is the length of the transform that it is meant to have.
 import numpy as np
 
 from ..stage import per_trace, stage
-from . import _FOURIER, _UNIT, _unwrap
+from . import _FOURIER, _UNIT, _kernels, _unwrap
 
 __all__ = ['clogfft', 'iclogfft', 'cepstrum', 'icepstrum', 'wfft']
 
 F32 = np.float32
-
-
-def _close_to_zero(x):
-    # (CLOSETO of SU: within 1e-5 or so)
-    return np.abs(x) < 1.0e-5
 
 
 def _check_sign(**signs):
@@ -46,23 +41,17 @@ def _real_trace(spectrum, n_fft, sign):
 
 def _log_spectrum(x, n_fft, sign, d1, mode, unwrap, trend, zeromean):
     """log|F| and the (unwrapped) phase of the spectrum of a trace"""
-    spectrum = _spectrum(x.astype(np.float64), n_fft, sign)
-    real, imag = spectrum.real, spectrum.imag
-    amp_squared = real * real + imag * imag
-    nonzero = ~_close_to_zero(amp_squared)
-    log_amp = np.zeros_like(real)
-    phase = np.zeros_like(real)
-    log_amp[nonzero] = 0.5 * np.log(amp_squared[nonzero])
-    phase[nonzero] = np.arctan2(imag[nonzero], real[nonzero])
+    spectrum = np.ascontiguousarray(_spectrum(x.astype(np.float64), n_fft, sign), dtype=np.complex64)
+    log_amp, phase = _kernels.clogfft_spectrum(spectrum)  # (the function of the SU library)
     if unwrap:
         if mode == 'suphase':
-            phase = _unwrap.simple(phase.astype(F32), int(trend), int(zeromean), F32(unwrap)).astype(np.float64)
+            phase = _unwrap.simple(phase, int(trend), int(zeromean), F32(unwrap))
         else:
             phase = _unwrap.oppenheim(
-                np.ascontiguousarray(real, dtype=F32), np.ascontiguousarray(imag, dtype=F32), F32(d1),
+                np.ascontiguousarray(spectrum.real, dtype=F32), np.ascontiguousarray(spectrum.imag, dtype=F32), F32(d1),
                 int(trend), int(zeromean),
-            ).astype(np.float64)
-    return log_amp, phase
+            )
+    return log_amp.astype(np.float64), phase.astype(np.float64)
 
 
 def _unwrap_parameters(mode, unwrap, **signs):
@@ -119,11 +108,7 @@ def _iclogfft(upstream, *, sign=-1, sym=False):
         n_fft = 2 * (n_freq - 1)
         log_spectrum = np.asarray(trace)
         # (a log amplitude of exactly 0 is how a spectrum that is 0 is stored, so it is taken to be one, as in SU)
-        spectrum = np.where(
-            log_spectrum.real != 0.0, np.exp(log_spectrum.real) * np.exp(1j * log_spectrum.imag), 0.0
-        )
-        if sym:
-            spectrum = spectrum * np.where(np.arange(n_freq) % 2 == 1, -1.0, 1.0)
+        spectrum = _kernels.iclogfft_spectrum(np.ascontiguousarray(log_spectrum, dtype=np.complex64), sym)
         df = trace.d_sample
         dt = 1.0 / (n_fft * df) if df else 0.0
         start = -(n_fft * dt / 2.0) if sym else 0.0
@@ -177,12 +162,8 @@ def _icepstrum(upstream, *, sign1=1, sign2=-1, sym=False, dt=None):
         n_fft = n + n % 2
         sample_dt = trace.d_sample or dt or 0.004
         # the transform of the cepstrum is the complex log spectrum (log amplitude, phase), which is then exponentiated
-        log_spectrum = _spectrum(np.asarray(trace).astype(np.float64), n_fft, sign1)
-        spectrum = np.where(
-            log_spectrum.real != 0.0, np.exp(log_spectrum.real) * np.exp(1j * log_spectrum.imag), 0.0
-        )
-        if sym:
-            spectrum = spectrum * np.where(np.arange(spectrum.shape[0]) % 2 == 1, -1.0, 1.0)
+        log_spectrum = np.ascontiguousarray(_spectrum(np.asarray(trace).astype(np.float64), n_fft, sign1), dtype=np.complex64)
+        spectrum = _kernels.iclogfft_spectrum(log_spectrum, sym)
         out = _real_trace(spectrum, n_fft, sign2)
         start = -(trace.header['sample_start'] + n_fft * sample_dt / 2.0) if sym else trace.header['sample_start']
         return trace.replace(out.astype(F32), d_sample=sample_dt, sample_start=start)
@@ -207,19 +188,10 @@ def _wfft(upstream, *, w0=0.75, w1=1.0, w2=0.75, sign=1, dt=None):
         n = trace.n_sample
         n_fft = n + n % 2
         sample_dt = trace.d_sample or dt or 0.004
-        spectrum = _spectrum(np.asarray(trace).astype(np.float64), n_fft, sign)
-        amplitude = np.abs(spectrum)
-        # the amplitudes of the frequencies on each side, and the sum of them with the weights
-        smooth = w1 * amplitude
-        smooth[1:] += w0 * amplitude[:-1]
-        smooth[:-1] += w2 * amplitude[1:]
-        # (the ends have only themselves: the first and the last are flattened completely)
-        smooth[0] = amplitude[0]
-        smooth[-1] = amplitude[-1]
-        with np.errstate(divide='ignore', invalid='ignore'):
-            flat = np.where(smooth > 0.0, spectrum / smooth, 0.0)
+        spectrum = np.ascontiguousarray(_spectrum(np.asarray(trace).astype(np.float64), n_fft, sign), dtype=np.complex64)
+        flat = _kernels.wfft_flatten(spectrum, w0, w1, w2)  # (the function of the SU library)
         return trace.replace(
-            flat.astype(np.complex64), d_sample=1.0 / (n_fft * sample_dt), sample_start=0.0, sampling_domain=_FOURIER,
+            flat, d_sample=1.0 / (n_fft * sample_dt), sample_start=0.0, sampling_domain=_FOURIER,
         )
 
     return per_trace(upstream, wfft_trace)

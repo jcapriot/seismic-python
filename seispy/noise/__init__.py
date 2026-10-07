@@ -2,11 +2,14 @@
 Random noise and random time shifts: SUADDNOISE (``addnoise``, ``addflatnoise``) and SUJITTER (``jitter``), from
 ``su/main/noise``.
 
-These use numpy's random numbers (``seed`` makes them repeatable), so for the same seed they do not make the numbers
-that SU's generator does.
+These use the random number generators of the SU library (``_rng.pyx``), with their own state for each stage, so for the same
+``seed`` they make the numbers that SU's programs make (``seed`` is the program's: by default it is the time).
 """
+import time
+
 import numpy as np
 
+from . import _rng
 from ..container import as_trace_iterator, from_iterable
 from ..stage import header_value, stage
 
@@ -14,11 +17,16 @@ __all__ = ['addnoise', 'addflatnoise', 'jitter']
 
 
 # --------------------------------------------------------------------------------------------------------- noise
+def _seed_of(seed):
+    """The seed of the generator: the one that is given, or the time, as the programs have it"""
+    return int(time.time()) if seed is None else int(seed)
+
+
 def _add_noise(upstream, draw, sn, seed, f, amps, dt):
     if sn <= 0:
         raise ValueError(f"sn={sn} must be positive")
     source = as_trace_iterator(upstream)
-    random = np.random.default_rng(seed)
+    seed = _seed_of(seed)
     bandlimit = f is not None or amps is not None
 
     def traces():
@@ -34,7 +42,7 @@ def _add_noise(upstream, draw, sn, seed, f, amps, dt):
         # the largest amplitude of all of the data
         absmax = max((float(np.abs(np.asarray(t)).max()) if n else 0.0) for t in data)
 
-        noise = draw(random, (len(data), n)).astype(np.float32)
+        noise = draw(seed, len(data) * n).astype(np.float32).reshape(len(data), n)
 
         # noise that has the band of the signal
         if bandlimit:
@@ -56,12 +64,13 @@ def _add_noise(upstream, draw, sn, seed, f, amps, dt):
     return from_iterable(traces(), n_traces=source.n_traces)
 
 
-def _gauss(random, shape):
-    return random.standard_normal(shape)
+def _gauss(seed, count):
+    return _rng.Normal(seed).draw(count)
 
 
-def _flat(random, shape):
-    return 2.0 * random.random(shape) - 1.0
+def _flat(seed, count):
+    # (uniform in [-1, 1))
+    return 2.0 * _rng.Uniform(seed).draw(count).astype(np.float64) - 1.0
 
 
 def _addnoise(upstream, *, sn=20, seed=None, f=None, amps=None, dt=None):
@@ -92,14 +101,8 @@ def _jitter(upstream, *, min=1, max=1, pon=True, seed=None, key=None):
     if min > max:
         raise ValueError(f"min={min} is more than max={max}")
     source = as_trace_iterator(upstream)
-    random = np.random.default_rng(seed)
-
-    def new_shift():
-        # (a whole number of samples, the part after the point of min + (max - min) u is cut off)
-        shift = int(min + (max - min) * random.random())
-        if pon:
-            shift *= 1 if random.random() >= 0.5 else -1
-        return shift
+    seed = _seed_of(seed)
+    f32 = np.float32
 
     def shifted(x, shift):
         out = np.zeros_like(x)
@@ -114,14 +117,23 @@ def _jitter(upstream, *, min=1, max=1, pon=True, seed=None, key=None):
         return out
 
     def traces():
-        shift = None
+        generator = _rng.Uniform(seed)
+
+        def new_shift():
+            # (a whole number of samples, the part after the point of min + (max - min) u is cut off. All in single precision)
+            shift = int(f32(min) + f32(max - min) * f32(generator.next()))
+            if pon:
+                shift *= -1 if f32(generator.next()) - f32(0.5) < 0 else 1
+            return shift
+
+        shift = new_shift()  # (sujitter makes a shift for the first trace before it looks at the key)
         last = None
         for trace in source:
             if key is None:
-                shift = new_shift()  # a new shift for every trace
+                shift = new_shift()  # (another one, for every trace, the first included)
             else:
                 value = header_value(trace, key)
-                if shift is None or value != last:
+                if last is not None and value != last:
                     shift = new_shift()  # a new shift when the key changes
                 last = value
             yield trace.replace(shifted(np.asarray(trace), shift))

@@ -7,7 +7,7 @@ of its own: ``amp`` (the envelope), ``phase``, ``freq``, ``normamp``, ``fdenv``,
     source | attributes.amp()
 
 They are made from the complex trace ``trace + i hilbert(trace)``, with the Hilbert transform of the SU library
-(``seispy.transforms.hilb``). The modes ``uphase``, ``freqw`` and ``thin`` are not here.
+(``seispy.transforms.hilb``), by the functions of the SU library in ``_attributes.pyx``. The modes ``uphase``, ``freqw`` and ``thin`` are not here.
 
 Where the program plainly does not do what its documentation says this does what the documentation says: ``bandwidth``
 and ``q`` run over 2 nt - 1 samples of a trace of nt (``ntout``), here it is nt.
@@ -16,6 +16,7 @@ import numpy as np
 
 from ..stage import Stage, per_trace
 from ..transforms import _hilbert
+from . import _attributes as _c
 
 __all__ = ['amp', 'phase', 'freq', 'normamp', 'fdenv', 'sdenv', 'bandwidth', 'q']
 
@@ -26,93 +27,37 @@ def _quadrature(trace):
     return x, _hilbert.hilbert(x)
 
 
-def _envelope(re, im):
-    return np.sqrt(re.astype(np.float64) ** 2 + im.astype(np.float64) ** 2)
-
-
-def _phase_of(re, im):
-    return np.arctan2(im.astype(np.float64), re.astype(np.float64))
-
-
-def _unwrap_phase(phase, w):
-    """The phase is assumed to increase. If its change from one sample to the next differs from the last by PI/w or
-    more, use the previous change. (The same crude unwrapping as SU.)"""
-    pibyw = np.pi / w
-    unwrapped = np.empty_like(phase)
-    unwrapped[0] = phase[0]
-    previous = 0.0
-    for i in range(1, phase.shape[0]):
-        change = abs(phase[i] - phase[i - 1])
-        if abs(change - previous) >= pibyw:
-            change = previous
-        unwrapped[i] = unwrapped[i - 1] + change
-        previous = change
-    return unwrapped
-
-
-def _differentiate(f, h):
-    """The derivative of f: centered differences, with a leading and a lagging difference at the ends"""
-    d = np.empty_like(f)
-    d[0] = (f[1] - f[0]) / h
-    d[1:-1] = (f[2:] - f[:-2]) / (2 * h)
-    d[-1] = (f[-1] - f[-2]) / h
-    return d
-
-
-def _instantaneous_frequency(re, im, dt, unwrap):
-    phase = _phase_of(re, im)
-    if unwrap != 0:
-        phase = _unwrap_phase(phase, unwrap)
-    freq = _differentiate(phase, 2.0 * np.pi * dt)
-    # (values above the Nyquist frequency are folded back)
-    nyquist = 0.5 / dt
-    return np.where(freq > nyquist, 2 * nyquist - freq, freq)
-
-
-def _safe_divide(a, b):
-    """a / b, and 0 where b is 0"""
-    out = np.zeros_like(a)
-    np.divide(a, b, out=out, where=b != 0)
-    return out
-
-
-# one function for each attribute: (re, im, dt, unwrap) -> the attribute
+# one function for each attribute: (re, im, dt, unwrap) -> the attribute, from the SU library (_attributes.pyx)
 def _amp(re, im, dt, unwrap):
-    return _envelope(re, im)
+    return _c.envelope(re, im)
 
 
 def _phase(re, im, dt, unwrap):
-    phase = _phase_of(re, im)
-    return _unwrap_phase(phase, unwrap) if unwrap != 0 else phase
+    return _c.phase(re, im, unwrap)
 
 
 def _freq(re, im, dt, unwrap):
-    return _instantaneous_frequency(re, im, dt, unwrap)
+    return _c.freq(re, im, dt, unwrap)
 
 
 def _normamp(re, im, dt, unwrap):
-    return np.cos(_phase_of(re, im))
+    return _c.normamp(re, im)
 
 
 def _fdenv(re, im, dt, unwrap):
-    return _differentiate(_envelope(re, im), 2.0 * np.pi * dt)
+    return _c.fdenv(re, im, dt)
 
 
 def _sdenv(re, im, dt, unwrap):
-    return _differentiate(_differentiate(_envelope(re, im), 2.0 * np.pi * dt), 2.0 * np.pi * dt)
+    return _c.sdenv(re, im, dt)
 
 
 def _bandwidth(re, im, dt, unwrap):
-    # Barnes 1992: |d(envelope)/dt| / (2 pi envelope)
-    envelope = _envelope(re, im)
-    return np.abs(_safe_divide(_differentiate(envelope, dt), 2.0 * np.pi * envelope))
+    return _c.bandwidth(re, im, dt)
 
 
 def _q(re, im, dt, unwrap):
-    # Barnes 1992: -pi f(t) envelope / d(envelope)/dt
-    envelope = _envelope(re, im)
-    freq = _instantaneous_frequency(re, im, dt, unwrap)
-    return _safe_divide(-np.pi * freq * envelope, _differentiate(envelope, dt))
+    return _c.q(re, im, dt, unwrap)
 
 
 class _AttributeFactory:

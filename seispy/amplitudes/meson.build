@@ -9,6 +9,7 @@ python_sources = [
 cython_sources = [
     '_gain.pyx',
     '_centsamp.pyx',
+    '_pgc.pyx',
 ]
 
 foreach cy_source : cython_sources

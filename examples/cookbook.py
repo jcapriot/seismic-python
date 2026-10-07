@@ -14,6 +14,7 @@ from seispy.decon import pef
 from seispy.filters import bfilt, minphase
 from seispy.noise import addnoise
 from seispy.parallel import group_by, pmap
+from seispy.stacking import stack
 from seispy.stage import per_trace, stage
 from seispy.stretching import nmo
 from seispy.synthetics import randspike, synlv
@@ -73,6 +74,20 @@ def cmp_gathers_to_nmo():
     # the gathers are cut where ensemble_number changes, so each one can go to a worker
     traces = source | pmap(flow, workers=2, chunk=8, key='ensemble_number')
     return [samples(gather) for gather in group_by(traces, 'ensemble_number')]
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+def stack_the_cmp_gathers():
+    """NMO correct synthetic CMP gathers and stack each one to a trace. The header of a stacked trace has the
+    number of traces that were stacked as its `fold`, and its offset is 0.
+
+    In SU:  susynlv ... | sunmo vnmo=2.0 | sustack key=cdp
+    """
+    stacked = list(
+        synlv(nt=251, dt=0.004, nxm=5, nxo=6, dxo=0.1) | nmo(vnmo=2.0)
+        | pmap(stack(), workers=2, chunk=6, key='ensemble_number')
+    )
+    return samples(stacked), [t.header['fold'] for t in stacked], [t.header['offset'] for t in stacked]
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -157,6 +172,7 @@ if __name__ == "__main__":
     reflectivity, seismogram, deconvolved = deconvolve_noisy_spikes()
     print("autocorrelation sidelobes:", sidelobe_energy(seismogram).mean(), "->", sidelobe_energy(deconvolved).mean())
     print("cmp gathers:", [g.shape for g in cmp_gathers_to_nmo()])
+    print("stack:", stack_the_cmp_gathers()[0].shape, stack_the_cmp_gathers()[1])
     print("wavelet peak frequency:", spectrum_of_a_wavelet()[0])
     print("echo delay:", find_an_echo_in_the_cepstrum())
     print("sweep, loudest frequency at the start and end:", time_frequency_of_a_sweep()[:2])

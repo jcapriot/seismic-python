@@ -1,5 +1,6 @@
 from ._bandpass import butterworth_bandpass as _butterworth_bandpass
 from ._fftfilter import _filter_stage as _filter
+from ._moveout import median, medmix
 from ._phasefilters import _frac, _phase
 from ._spectral import _minphase, _tvband
 from ..stage import stage
@@ -37,4 +38,4 @@ minphase = stage(_minphase, parallelism='trace', name='minphase', validate=True)
 # A time-variant bandpass filter (SUTVBAND): `source | tvband(tf=[.2, 1.5], f=[[10, 12.5, 40, 50], [10, 12.5, 30, 40]])`
 tvband = stage(_tvband, parallelism='trace', name='tvband', validate=True)
 
-__all__ = ['bfilt', 'filter', 'frac', 'phase', 'minphase', 'tvband']
+__all__ = ['bfilt', 'filter', 'frac', 'phase', 'minphase', 'tvband', 'median', 'medmix']
