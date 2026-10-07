@@ -1,4 +1,5 @@
 import gc
+import os
 import sys
 
 import numpy as np
@@ -88,12 +89,19 @@ def _rss_bytes():
         if not ok:
             pytest.skip("Unable to query process memory.")
         return counters.WorkingSetSize
-    try:
+    if os.path.exists('/proc/self/statm'):  # (linux)
         import resource
-    except ImportError:
-        pytest.skip("Unable to query process memory.")
-    with open('/proc/self/statm') as f:
-        return int(f.read().split()[1]) * resource.getpagesize()
+
+        with open('/proc/self/statm') as f:
+            return int(f.read().split()[1]) * resource.getpagesize()
+    if sys.platform == 'darwin':
+        import subprocess
+
+        # (the resident size now, in KiB)
+        out = subprocess.run(['ps', '-o', 'rss=', '-p', str(os.getpid())], capture_output=True, text=True, check=False)
+        if out.returncode == 0 and out.stdout.strip().isdigit():
+            return int(out.stdout.strip()) * 1024
+    pytest.skip("Unable to query process memory.")
 
 
 def test_trace_buffers_are_freed():
