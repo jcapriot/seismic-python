@@ -15,7 +15,7 @@ name = 'seismic-python'
 dynamic = ["version"]
 description = 'Wavefield Imaging'
 readme = 'README.md'
-requires-python = '>=3.10'
+requires-python = '>=3.12'
 authors = [
   {name = 'Joseph Capriotti', email = 'josephrcapriotti@gmail.com'},
 ]
@@ -29,7 +29,7 @@ keywords = [
 dependencies = [
     # TODO: update to "pin-compatible" once possible, see
     # https://github.com/mesonbuild/meson-python/issues/29
-    "numpy>=1.22.4",
+    "numpy>=1.26.0",
     "matplotlib",
 ]
 classifiers = [
@@ -60,15 +60,30 @@ Repository = 'http://github.com/jcapriot/seismic-python.git'
 [tool.meson-python.args]
 setup = ['--default-library=static']
 
+[dependency-groups]
+test = [
+    "pytest",
+]
+# what is needed to build the package without build isolation, and to test it: `uv pip install --group dev`
+dev = [
+    {include-group = "test"},
+    "meson-python>=0.15.0",
+    "meson",
+    "ninja",
+    "Cython>=3.0.8",
+    "numpy>=2.0.0",
+]
+
 [tool.cibuildwheel]
-# skip building wheels for python 3.6, 3.7, 3.8, 3.9, all pypy versions, and specialty linux
+# skip building wheels for python before 3.12, all pypy versions, free threaded builds, and specialty linux
 # processors (still does arm builds though).
 # skip windows 32bit
-skip = "cp36-* cp37-* cp38-* cp39-* pp* *_ppc64le *_i686 *_s390x *-win32"
+skip = "cp36-* cp37-* cp38-* cp39-* cp310-* cp311-* pp* cp3*t-* *_ppc64le *_i686 *_s390x *-win32"
 build-verbosity = "3"
 
-# test importing discretize to make sure externals are loadable.
-test-command = 'python -c "import seispy.container"'
+# run the tests on the wheels that are built (from {project}/tests: the package that is imported is the installed one)
+test-requires = "pytest"
+test-command = "pytest {project}/tests"
 
 
 # use the visual studio compilers

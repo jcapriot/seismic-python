@@ -12,46 +12,57 @@ on:
   schedule:
     - cron: "0 13 * * 1"
 
+permissions:
+  contents: read
+
+# a new push to a branch cancels the runs that are still going for it
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-and-test:
-    name: Testing (Python ${{ matrix.python-version }}, on ${{ matrix.os }}
+    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # the newest python can fail for a while for want of wheels of what it needs (numpy, Cython): it does not fail the run
+    continue-on-error: ${{ matrix.python-version == '3.15' }}
     defaults:
       run:
-        shell: bash -l {0}
+        shell: bash
     strategy:
-      fail-fast: False
+      fail-fast: false
       matrix:
-        os:  [ubuntu-latest, windows-latest, macos-13, macos-latest]
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        # macos-15-intel is an intel runner, macos-latest is apple silicon
+        os: [ubuntu-latest, windows-latest, macos-15-intel, macos-latest]
+        python-version: ["3.12", "3.13", "3.14", "3.15"]
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Setup Conda
-      uses: conda-incubator/setup-miniconda@v3
-      with:
-        python-version: ${{ matrix.python-version }}
-        channels: conda-forge, defaults
-        channel-priority: true
-        activate-environment: dev
+      - uses: actions/checkout@v5
 
-    - name: Create environment
-      run: |
-        conda install --quiet --yes -c conda-forge \
-          pip numpy cython meson-python meson ninja pytest
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
 
-    - name: Install Our Package
-      run: |
-        python -m pip install --no-build-isolation --verbose --editable . \
-          --config-setting=compile-args=-v \
-          ${{ matrix.os == 'windows-latest' && '--config-settings=setup-args="-Dvsenv=true"' || ''}}
+      - name: Create the environment
+        # the build tools are installed in it (the `dev` group of pyproject.toml), as the package is built without isolation
+        run: |
+          uv venv
+          uv pip install --group dev
 
-    - name: Conda information
-      run: |
-        conda info
-        conda list
-        conda config --show
+      - name: Install our package
+        # the visual studio compilers on windows, for compatibility with the python build
+        run: |
+          uv pip install --no-build-isolation --verbose --editable . \
+            -Ccompile-args=-v \
+            ${{ matrix.os == 'windows-latest' && '-Csetup-args=--vsenv' || '' }}
 
-    - name: Run Tests
-      run: |
-        pytest -s -vv
+      - name: Show the environment
+        run: |
+          uv --version
+          uv pip list
+
+      - name: Run tests
+        run: uv run --no-sync pytest -vv
