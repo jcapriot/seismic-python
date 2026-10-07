@@ -1,5 +1,5 @@
 from seispy.synthetics import synlv
-from seispy.filters import butterworth_bandpass
+from seispy.filters import bfilt
 from seispy.plotting import wiggle
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,7 +9,7 @@ segy = synlv().to_memory()
 wiggle(segy)
 plt.show()
 
-bandpassed = butterworth_bandpass(segy)
+bandpassed = segy | bfilt()
 
 im_dat = np.array([trace for trace in bandpassed])
 

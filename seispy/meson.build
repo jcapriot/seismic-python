@@ -1,11 +1,25 @@
-subdir('su')
+subdir('include')
 subdir('io')
 subdir('filters')
+subdir('amplitudes')
+subdir('operations')
+subdir('tapering')
+subdir('windowing')
+subdir('stretching')
+subdir('transforms')
+subdir('convolution')
+subdir('attributes')
+subdir('decon')
+subdir('stacking')
+subdir('noise')
+subdir('waveforms')
 subdir('synthetics')
 
 python_sources = [
     '__init__.py',
     'plotting.py',
+    'stage.py',
+    'parallel.py',
 ]
 
 module_path = 'seispy'
@@ -23,14 +37,5 @@ py.extension_module(
     install: true,
     subdir: module_path,
     dependencies : [py_dep, su_dep],
-)
-
-py.extension_module(
-    'test',
-    'test.pyx',
-    cython_args: cython_args,
-    c_args: cython_c_args,
-    install: true,
-    subdir: module_path,
-    dependencies : [py_dep, np_dep],
+    include_directories: spy_include,
 )

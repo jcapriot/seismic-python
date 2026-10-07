@@ -38,7 +38,7 @@ streams to a file.
 
 E.G.
 ```bash
-suplane | subfilt > out.su
+plane | bfilt > out.su
 ```
 
 
@@ -105,4 +105,249 @@ in seismic unix to `meson` helped to ensure proper linkage within the project.
 Currently, the base `cwp`, `par` and `su` libraries are built and linked into the python package.
 
 A little bit more subtleties here is that I'm using cython iterators to do the above operations, with
-the intention of releasing the GIL when inside calls to enable threading. 
+the intention of releasing the GIL when inside calls to enable threading.
+
+
+## Complex traces
+A trace has samples of dtype `float32` (the default) or `complex64`, which is what `np.asarray(trace)` gives you (still a
+zero-copy view). Make one with a complex array, or `Trace(data, d_sample, dtype='complex64')`. `fft` and `analytic`
+make them, and `ifft`, `real`, `imag`, `amp`, `logamp` and `phase` take them apart. SU has these as traces of pairs of
+floats with a trace id, here `n_sample` is the number of complex samples.
+
+Each stage does what makes sense for complex numbers, rather than refusing them all:
+
+* **Anything that is defined for complex numbers works**, and keeps the trace complex: scaling and adding (`gain`'s
+  `tpow`, `epow`, `scale`, `norm` and `bias`, which is a real number added to the real part), `op.neg`, `op.sum`,
+  `op.mean`, `op.sin`, `op.inv`, ..., `weight`, `zero`, `nan`, `taper`, `ramp`, `mute`, `wind`, `kill`, `shift`,
+  `reduce`, `normalize` (by rms or max), and `conv`. `op.abs` and `op.db` give the modulus (a real trace), and so do the
+  statistics `op.std` and `op.var`.
+* **Filters with real coefficients are linear**, so they are applied to the real and to the imaginary part: `bfilt`,
+  `filter`, `hilb`, `resamp` and `nmo`.
+* **What needs an order, a sign, a median, or a real signal's spectrum is rejected** with a `TypeError`: `op.posonly`,
+  `op.ssqrt`, `op.sgn`, `op.slog`, `op.spike`, `op.saf`, `op.despike`, `normalize('med')`, `gain`'s clipping, `agc`,
+  `gpow` and balancing options, `frac`, `phase`, `zerophase`, `acor`, `xcor`, `ai2r`, `r2ai`, `seispy.attributes`,
+  `fft` and `analytic`. SEG-Y has no complex traces.
+
+A trace shares the memory of the array it is made from (as it always has), so copy the array if you are going to write to
+the trace.
+
+## The trace header
+`trace.header` is a dict of what a trace needs that can not be worked out from the others:
+
+| | |
+|---|---|
+| `n_sample`, `d_sample`, `sample_start` | the number of samples, the sample interval and the time of the first sample, in seconds (or meters for depth) |
+| `sampling_unit`, `sampling_domain` | seconds or meters, and time (or space) or Fourier domain |
+| `tx_loc`, `rx_loc` | source and receiver `(x, y, elevation)`, with `coord_unit` for x and y: `'length'` or `'degrees'` (SEG-Y's seconds of arc and degrees-minutes-seconds are converted on reading) |
+| `ensemble_number`, `ensemble_trace_number` | the gather that the trace is in (the CDP, the shot, the panel it came from), and its number in it, from 1 (0 is not set) |
+| `trace_id`, `iline`, `xline` | the number of the trace in its line, and the in-line and cross-line numbers of a 3D survey |
+| `trace_type` | the SEG-Y trace identification code: 1 for seismic data, 2 for a dead trace, ... |
+| `fold` | the number of traces that were stacked to make this one (0 if it is a single trace) |
+| `source_static`, `receiver_static`, `total_static` | static shifts, in seconds |
+
+The offset is `header['offset']`, but it is worked out from the source and the receiver (negative when the receiver comes
+first), and so is the midpoint. `trace.replace(offset=500.0)` moves the receiver. `replace` makes a new trace (as the stages do,
+unless they are given `inplace=True`).
+
+## Examples
+These are in `examples/cookbook.py`, which the tests run.
+
+**Deconvolution.** A seismogram (random reflectivity convolved with a wavelet, plus noise), then Wiener deconvolution.
+Sources are used up by one pass, so make a new one when it is needed again.
+
+```python
+from seispy.waveforms import ricker1
+from seispy.filters import minphase
+from seispy.synthetics import randspike
+from seispy.convolution import conv
+from seispy.noise import addnoise
+from seispy.decon import pef
+
+# the first trace of a source (spiking deconvolution assumes a minimum phase wavelet)
+wavelet = next(iter(ricker1(fpeak=25.0, dt=0.002) | minphase()))
+
+traces = randspike(n1=400, n2=8, dt=0.002, nspk=12, seed=1) | conv(wavelet) | addnoise(sn=100, seed=2) | pef(maxlag=0.08)
+```
+
+**A processing flow on gathers.** Each stage works on one trace; `pmap` splits the stream between gathers across threads, and
+`group_by` cuts the result back into gathers.
+
+```python
+from seispy.synthetics import synlv
+from seispy.amplitudes import gain
+from seispy.windowing import mute
+from seispy.stretching import nmo
+from seispy.filters import bfilt
+from seispy.parallel import group_by, pmap
+
+flow = gain(tpow=2.0) | mute(xmute=[0.0, 1.0], tmute=[0.0, 0.2]) | nmo(vnmo=2.0) | bfilt(f_pass_low=2.0, f_stop_low=1.0)
+gathers = group_by(
+    synlv(nt=251, dt=0.004, nxm=5, nxo=6, dxo=0.1) | pmap(flow, workers=2, chunk=8, key='ensemble_number'),
+    'ensemble_number',
+)
+```
+
+**Stacking.** Stacking works on gathers: the run of traces that have the same value of `key` (default
+`ensemble_number`, the CDP). The stacked trace has the header of the first trace, with the offset 0 and `fold` the number
+of traces that were stacked. `sort` first if the traces are not in order, or use `stackup`, which stacks in any order.
+
+```python
+from seispy.stacking import stack
+
+stacked = synlv(nt=251, dt=0.004, nxm=5, nxo=6, dxo=0.1) | nmo(vnmo=2.0) | pmap(stack(), workers=2, chunk=6, key='ensemble_number')
+```
+
+**Spectra, and the cepstrum.** Spectra are complex traces in the Fourier domain: their `d_sample` is the frequency step.
+
+```python
+import numpy as np
+from seispy.transforms import fft, amp, cepstrum
+
+(spectrum,) = ricker1(fpeak=30.0, dt=0.002, ns=512) | fft() | amp()
+peak_frequency = np.argmax(np.asarray(spectrum)) * spectrum.d_sample      # 30.3 Hz
+
+# an echo is a peak in the cepstrum, at its delay
+from seispy.container import Trace, from_iterable
+x = np.zeros(256, dtype=np.float32); x[0], x[40] = 1.0, 0.6
+(c,) = from_iterable([Trace(x, d_sample=0.002)]) | cepstrum(unwrap=0)     # the peak is at 0.08 s
+```
+
+**Time-frequency panels.** Each trace becomes a gather of traces, one for each frequency (or scale), numbered by
+`ensemble_trace_number`.
+
+```python
+from seispy.waveforms import vibro_linear
+from seispy.transforms import st, gabor
+
+sweep = lambda: vibro_linear(f1=10.0, f2=80.0, tv=2.0, dt=0.004, t1=0.0, t2=0.0)
+stockwell = np.array([np.asarray(t) for t in sweep() | st(fmin=5.0, fmax=100.0)])    # (frequencies, time)
+multifilter = np.array([np.asarray(t) for t in sweep() | gabor(band=5.0)])
+```
+
+**Your own stage.** Any function of one trace is a stage with `per_trace`, and `stage` makes it chainable, and usable with
+`pmap` (`parallelism='trace'` says that traces are independent of each other).
+
+```python
+from seispy.stage import per_trace, stage
+
+def _scale_by_offset(upstream, *, per_km=0.1):
+    def scaled(trace):
+        return trace.replace(np.asarray(trace) * (1.0 + per_km * abs(trace.header['offset']) / 1000.0))
+    return per_trace(upstream, scaled)
+
+scale_by_offset = stage(_scale_by_offset, parallelism='trace', name='scale_by_offset', validate=True)
+traces = synlv() | scale_by_offset(per_km=0.5)
+```
+
+**SEG-Y.** `read_segy` gives an iterator of traces, with the coordinates scaled, the angles in degrees, and the times in
+seconds. It can be the left hand side of a pipe.
+
+```python
+from seispy.io import read_segy
+
+traces = read_segy("line.sgy") | bfilt(f_pass_low=40.0, f_stop_low=50.0) | gain(agc=True, wagc=0.5)
+```
+
+## Pipes and parallelism
+Processing steps can be written as input-less *stages* and chained with `|`, just like the shell:
+
+```python
+from seispy.synthetics import spike
+from seispy.filters import bfilt
+
+traces = spike() | bfilt(f_pass_low=10.0, f_stop_low=5.0) | bfilt(zerophase=False)
+```
+
+Any iterable of `Trace` objects (e.g. your own generator) can be the left hand side of a pipe.
+
+In a unix pipe every program runs at the same time, and `xargs -P` runs one program on several pieces of data at once.
+`seispy.parallel` provides both, using only the standard library:
+
+```python
+from seispy.parallel import prefetch, pmap
+
+# pipeline parallelism: each side of a `prefetch()` runs in its own thread, with a bounded buffer between them
+spike() | bfilt(...) | prefetch() | bfilt(...)
+
+# data parallelism: several workers on different chunks of the stream, results come back in order
+spike() | pmap(bfilt(...) | bfilt(...), workers=8, chunk=16)
+```
+
+Stages declare how finely they can be split: `parallelism='trace'` (cut anywhere), `'ensemble'` (cut only between
+gathers, give `pmap` a `key=` header name), or `'serial'` (the default; `pmap` refuses it). Threads give a speedup
+for stages that release the GIL (the SU filter kernels do), otherwise use `executor='process'`.
+See `examples/parallel_benchmark.py`.
+
+
+## Available programs
+Stages are named after the SU program they port, without the `su` prefix, and live in packages named after SU's own
+categories. Their parameters are the SU parameters, as keyword arguments.
+
+| seispy | SU | |
+|---|---|---|
+| `seispy.synthetics.spike`, `plane`, `synlv` | `suspike`, `suplane`, `susynlv` | sources |
+| `seispy.filters.bfilt` | `subfilt` | Butterworth filters |
+| `seispy.filters.filter` | `sufilter` | zero-phase, tapered polygonal filter |
+| `seispy.amplitudes.gain` | `sugain` | tpow, epow, gpow, agc, clipping, balancing, ... |
+| `seispy.operations.*` | `suop` | one stage per operation: `abs()`, `sqr()`, `slog10()`, `diff()`, `mean(nw=11)`, ... |
+| `seispy.amplitudes.zero`, `nan`, `normalize` | `suzero`, `sunan`, `sunormalize` | zero a time window, replace NaNs and Infs, normalize by rms/max/median |
+| `seispy.amplitudes.weight`, `ai2r`, `r2ai` | `suweight`, `suai2r`, `sur2ai` | weight traces by a header value, impedance to reflectivity and back |
+| `seispy.tapering.taper`, `ramp` | `sutaper`, `suramp` | taper the start and end of traces, and/or the edge traces of a panel |
+| `seispy.windowing.mute`, `wind`, `kill` | `sumute`, `suwind`, `sukill` | mute above/below a curve (modes 0-4), window by header value and in time, zero traces |
+| `seispy.stretching.shift`, `resamp`, `reduce`, `nmo` | `sushift`, `suresamp`, `sureduce`, `sunmo` | shift/window in time, sinc resampling, reduced time, NMO with velocity functions of time and CDP |
+| `seispy.transforms.hilb`, `zerophase` | `suhilb`, `suzerophase` | Hilbert transform (SU's own FIR, whose sign is the opposite of the usual one), zero-phase equivalent |
+| `seispy.transforms.analytic`, `fft`, `ifft`, `real`, `imag`, `amp`, `logamp`, `phase` | `suanalytic`, `sufft`, `suifft`, `suamp` | complex traces: make them, and take them apart |
+| `seispy.filters.frac`, `phase` | `sufrac`, `suphase` | fractional derivative/integral plus a phase shift, linear phase manipulation (numpy FFT) |
+| `seispy.filters.minphase`, `tvband` | `suminphase`, `sutvband` | minimum phase equivalent (Kolmogoroff), time-variant bandpass (numpy FFT) |
+| `seispy.decon.pef`, `shape` | `supef`, `sushape` | Wiener predictive/spiking deconvolution, Wiener shaping filter (SU's Toeplitz solver) |
+| `seispy.stretching.log`, `ilog`, `tsq`, `ttoz`, `ztot` | `sulog`, `suilog`, `sutsq`, `suttoz`, `suztot` | log and time-squared stretch, time-to-depth and depth-to-time resampling |
+| `seispy.convolution.acor`, `conv`, `xcor` | `suacor`, `suconv`, `suxcor` | auto-correlation, convolution and cross-correlation with a filter |
+| `seispy.attributes.amp`, `phase`, `freq`, `q`, ... | `suattributes` | instantaneous attributes, one stage per mode |
+| `seispy.waveforms.akb`, `berlage`, `gauss`, `gaussd`, `ricker1`, `ricker2`, `spike`, `unit`, `dgauss` | `suwaveform`, `sudgwaveform` | wavelets (computed by the SU library), one function for each type: sources |
+| `seispy.waveforms.vibro_linear`, `vibro_segments`, `vibro_octave`, `vibro_hertz`, `vibro_tpower` | `suvibro` | Vibroseis sweeps, with tapers: sources |
+| `seispy.synthetics.null`, `randspike` | `sunull`, `surandspike` | traces of zeros, random spikes: sources |
+| `seispy.noise.addnoise`, `addflatnoise`, `jitter` | `suaddnoise`, `sujitter` | Gaussian or uniform noise at a signal to noise ratio (optionally band limited), random time shifts |
+| `seispy.amplitudes.divcor`, `pgc`, `centsamp`, `impedance` | `sudivcor`, `supgc`, `sucentsamp`, `suimpedance` | divergence correction, programmed gain control, centroid samples of lobes (SU's code), reflectivity to impedance |
+| `seispy.convolution.acorfrac`, `refcon` | `suacorfrac`, `surefcon` | fractional autocorrelation/convolution, refraction convolution of forward and reverse shots |
+| `seispy.transforms.clogfft`, `iclogfft`, `cepstrum`, `icepstrum`, `wfft` | `suclogfft`, `suiclogfft`, `sucepstrum`, `suicepstrum`, `suwfft` | complex log spectrum with phase unwrapping (SU's code), the cepstrum, spectrum flattening |
+| `seispy.transforms.st`, `gabor`, `cwt` | `sust`, `sugabor`, `sucwt` | time-frequency panels: Stockwell transform, multifilter analysis, wavelet transform |
+| `seispy.windowing.vlength` | `suvlength` | make traces the same length |
+| `seispy.stacking.stack`, `divstack`, `pws`, `stackup` | `sustack`, `sudivstack`, `supws`, `sustackup` | stack the traces of each gather (a run of equal `key`): mean, diversity, phase-weighted; stacking to any key combination in any order |
+| `seispy.windowing.sort`, `mixgathers` | `susort`, `sumixgathers` | sort by header values (in memory), fill the gaps of a gather from another |
+| `seispy.operations.mix`, `sum2`, `diff2`, `prod2`, `quo2`, `ptsum`, `ptdiff`, `ptprod`, `ptquo`, `zipper`, `zippol` | `sumix`, `suop2` | moving average over traces, arithmetic on two data sets (or a data set and a trace), complex traces from two real ones |
+| `seispy.filters.median`, `medmix` | `sumedian` | median or mix about a moveout curve, to suppress events that have that moveout |
+
+```python
+from seispy.synthetics import synlv
+from seispy.filters import filter
+from seispy.amplitudes import gain
+from seispy import operations as op
+
+traces = synlv() | gain(tpow=2.0) | filter(f=[10, 20, 60, 80]) | gain(agc=True, wagc=0.2) | op.sgn()
+```
+
+### What runs the SU C code
+The work of each SU program is a library function in the SU sources (`su_gain`, `su_nmo`, `su_mute_above`, ...), with the
+program's `main` left out of the build: the stages call those through Cython, without the GIL. The lookup tables and scratch
+arrays that the programs keep in `static` variables, filled in by the first trace, are arguments in the library versions, which
+is what lets the stages run in parallel (`tests/test_threads_c.py` checks that). The few places where the library versions
+differ from the programs, because the program is plainly wrong, are listed at the top of each source file.
+
+* **The program is the SU code:** `gain`, `bfilt`, `nmo`, `resamp`, `hilb`, `analytic`, `synlv`, `centsamp`, `mute` (every mode),
+  `taper`, `ramp`, the wavelets (`seispy.waveforms`) and the sweeps, `log`, `ilog`, `ttoz`, `ztot` and `tsq`, the attributes
+  (`seispy.attributes`), `conv`, `acor`, `xcor` and `refcon` (the SU convolution and correlation), `pgc`, the stacks
+  (`stack`, `divstack`, `pws`, `stackup`), and `median` and `medmix`. The random numbers of `addnoise`, `addflatnoise`, `jitter`
+  and `randspike` are those of SU's generators, so for the same `seed` they make the numbers that the programs make.
+* **numpy's FFT, with the SU code between the transforms:** `frac`, `phase`, `minphase`, `tvband`, `wfft`, `acorfrac`,
+  `clogfft`, `iclogfft`, `cepstrum`, `icepstrum` (phase unwrapping is SU's too), `st`, `gabor` and `cwt`. The SU programs
+  pad every trace for their prime-factor FFT, which is not carried over. `filter` designs its filter with `polygonalFilter` of the
+  SU sources, and filters with numpy's FFT.
+* **Plain numpy, where the program is only arithmetic:** the operations of `suop` (all but `saf`, `freq` and `despike`),
+  `zero`, `nan`, `normalize`, `weight`, `divcor`, `impedance`, `ai2r`, `r2ai`, `wind`, `kill`, `vlength`, `sort`,
+  `mixgathers`, `suop2` (the binary operations), `shift`, `reduce`, `real`, `imag`, `amp`, `fft` and `ifft`,
+  and the source `null`. (`mix` uses the SU weighted sum.)
+
+The stages do not
+support SU parameters that need header words that seispy does not have (`mark`, `tracl`, `muts`, ...) or
+temporary files (`tmpdir`). Where SU takes a header word by name (`key=offset`), these take the name of a value in
+`trace.header`, or a function of a trace.

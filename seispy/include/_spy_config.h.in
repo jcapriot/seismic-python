@@ -1,0 +1,92 @@
+#ifndef SPY_CONFIG_H
+#define SPY_CONFIG_H
+
+#mesondefine SPY_SIZEOF_FLOAT
+#mesondefine SPY_SIZEOF_DOUBLE
+// #mesondefine SPY_SIZEOF_LONGDOUBLE
+
+#mesondefine HAVE___BUILTIN_BSWAP16
+#mesondefine HAVE___BUILTIN_BSWAP32
+#mesondefine HAVE___BUILTIN_BSWAP64
+
+#mesondefine IS_LITTLE_ENDIAN
+#mesondefine IS_BIG_ENDIAN
+
+#include <stdint.h>
+typedef int8_t  spy_int8;
+typedef int16_t spy_int16;
+typedef int32_t spy_int32;
+typedef int64_t spy_int64;
+
+typedef uint8_t  spy_uint8;
+typedef uint16_t spy_uint16;
+typedef uint32_t spy_uint32;
+typedef uint64_t spy_uint64;
+
+// #if SPY_SIZEOF_LONGDOUBLE == SPY_SIZEOF_DOUBLE
+//     typedef double spy_longdouble;
+// #else
+//     typedef long double spy_longdouble;
+// #endif
+
+#ifdef IS_BIG_ENDIAN
+#define SPY_SYS_ENDIAN 0
+#elif defined(IS_LITTLE_ENDIAN)
+#define SPY_SYS_ENDIAN 1
+#else
+#define SPY_SYS_ENDIAN 2
+#endif
+
+
+#if SPY_SIZEOF_FLOAT == 4
+    #ifndef SPY_FLOAT32
+    #define SPY_FLOAT32
+        typedef float spy_float32;
+    #endif
+#elif SPY_SIZEOF_FLOAT == 8
+    #ifndef SPY_FLOAT64
+    #define SPY_FLOAT64
+        typedef float spy_float64;
+    #endif
+// #elif SPY_SIZEOF_FLOAT == 16
+//     #ifndef SPY_FLOAT128
+//     #define SPY_FLOAT128
+//         typedef float spy_float128;
+//     #endif
+#endif
+
+#if SPY_SIZEOF_DOUBLE == 4
+    #ifndef SPY_FLOAT32
+    #define SPY_FLOAT32
+        typedef double spy_float32;
+    #endif
+#elif SPY_SIZEOF_DOUBLE == 8
+    #ifndef SPY_FLOAT64
+    #define SPY_FLOAT64
+        typedef double spy_float64;
+    #endif
+// #elif SPY_SIZEOF_DOUBLE == 16
+//     #ifndef SPY_FLOAT128
+//     #define SPY_FLOAT128
+//         typedef double spy_float128;
+//     #endif
+#endif
+
+// #if SPY_SIZEOF_LONGDOUBLE == 4
+//     #ifndef SPY_FLOAT32
+//     #define SPY_FLOAT32
+//         typedef spy_longdouble spy_float32;
+//     #endif
+// #elif SPY_SIZEOF_LONGDOUBLE == 8
+//     #ifndef SPY_FLOAT64
+//     #define SPY_FLOAT64
+//         typedef spy_longdouble spy_float64;
+//     #endif
+// #elif SPY_SIZEOF_LONGDOUBLE == 16
+//     #ifndef SPY_FLOAT128
+//     #define SPY_FLOAT128
+//         typedef spy_longdouble spy_float128;
+//     #endif
+// #endif
+
+#endif

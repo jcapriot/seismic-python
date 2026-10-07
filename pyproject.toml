@@ -68,7 +68,7 @@ skip = "cp36-* cp37-* cp38-* cp39-* pp* *_ppc64le *_i686 *_s390x *-win32"
 build-verbosity = "3"
 
 # test importing discretize to make sure externals are loadable.
-test-command = 'python -c "import seispy.segy"'
+test-command = 'python -c "import seispy.container"'
 
 
 # use the visual studio compilers

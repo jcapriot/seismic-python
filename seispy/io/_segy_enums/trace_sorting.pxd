@@ -1,0 +1,13 @@
+cdef enum TraceSorting:
+    unknown = 0
+    none = 1
+    cdp = 2
+    single_fold = 3
+    horiz_stack = 4
+    # rev 1
+    other = -1
+    source = 5
+    receiver = 6
+    offset = 7
+    midpoint = 8
+    conv_point = 9

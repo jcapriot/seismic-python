@@ -17,15 +17,6 @@ if m_dep.found()
   add_project_link_arguments('-lm', language : 'c')
 endif
 
-endianness = target_machine.endian()
-if endianness == 'little'
-    add_project_arguments('-DIS_LITTLE_ENDIAN', language : 'c')
-elif endianness == 'big'
-    add_project_arguments('-DIS_BIG_ENDIAN', language : 'c')
-else
-    error('Cannot determine target system endian')
-endif
-
 _global_c_args = cc.get_supported_arguments(
   '-Wno-unused-but-set-variable',
   '-Wno-unused-function',
@@ -50,12 +41,18 @@ endif
 
 c_undefined_ok = ['-Wno-maybe-uninitialized']
 
-cython_c_args = [numpy_nodepr_api, use_math_defines, '-DCYTHON_TRACE_NOGIL=1']
+cython_c_args = [numpy_nodepr_api, use_math_defines]
+# (the `linetrace` directive of the modules only does something if this is defined: -Dline_tracing=true)
+if get_option('line_tracing')
+  cython_c_args += ['-DCYTHON_TRACE_NOGIL=1']
+endif
 
 cython_args = []
 if cy.version().version_compare('>=3.1.0')
   cython_args += ['-Xfreethreading_compatible=True']
 endif
 
+su_proj = subproject('su')
+su_dep = su_proj.get_variable('su_dep')
 
 subdir('seispy')

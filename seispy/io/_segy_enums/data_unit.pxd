@@ -1,0 +1,12 @@
+cdef enum DataUnit:
+    other = -1
+    unknown = 0
+    pascal = 1
+    volts = 2
+    millivolts = 3
+    amperes = 4
+    meters = 5
+    meters_per_second = 6
+    meters_per_second_sq = 7
+    newton = 8
+    watt = 9

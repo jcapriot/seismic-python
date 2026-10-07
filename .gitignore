@@ -124,3 +124,7 @@ dmypy.json
 .pyre/
 
 .idea/
+
+.DS_Store
+
+subprojects/su
