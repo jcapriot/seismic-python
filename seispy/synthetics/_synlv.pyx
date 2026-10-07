@@ -8,6 +8,16 @@ from libc.float cimport FLT_MAX
 from libc.math cimport sqrtf, fabs
 cimport cython
 
+
+cdef void _make_the_table() noexcept:
+    # addsinc (par/lib/modeling.c) makes a table of sinc coefficients (file level static variables) the first time that it is
+    # called, which is not safe to do from several threads at once. Once made it is only read, so make it once, here, while
+    # this module is being imported and nothing else is running.
+    su.su_addsinc_table()
+
+
+_make_the_table()
+
 cdef class synlv(spyc.BaseTraceIterator):
     cdef:
         bint shots, ls, er, ob
@@ -193,18 +203,17 @@ cdef class synlv(spyc.BaseTraceIterator):
         xr = xs + xo
 
         cdef float[::1] data = spyc.alloc_data(self.nt)
-        # NOTE: deliberately *not* released the GIL here. su_synlv -> addsinc (par/lib/modeling.c)
-        # lazily fills a function-local `static` sinc table with no synchronization, which is
-        # a data race if two threads call it at once.
-        su.su_synlv(
-            &data[0],
-            xs, z, xr, z,
-            self.nt, self.dt, self.ft,
-            self.v00, self.dvdx, self.dvdz,
-            self.ls, self.er, self.ob,
-            self.w, self.nr, self.r,
-            self.lhd, self.nhd, self.hd_filt
-        )
+        # (su_synlv only reads what it is given, and the sinc table of addsinc is made when this module is imported)
+        with nogil:
+            su.su_synlv(
+                &data[0],
+                xs, z, xr, z,
+                self.nt, self.dt, self.ft,
+                self.v00, self.dvdx, self.dvdz,
+                self.ls, self.er, self.ob,
+                self.w, self.nr, self.r,
+                self.lhd, self.nhd, self.hd_filt
+            )
 
         cdef spyc.spy_trace_header * hdr = spyc.new_hdr(self.nt)
 

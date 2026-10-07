@@ -2,7 +2,7 @@
 build-backend = 'mesonpy'
 requires = [
     "meson-python>=0.15.0",
-    "Cython>=3.0.8",
+    "Cython>=3.1.0",
 
     # numpy requirement for wheel builds for distribution on PyPI - building
     # against 2.x yields wheels that are also compatible with numpy 1.x at
@@ -30,7 +30,6 @@ dependencies = [
     # TODO: update to "pin-compatible" once possible, see
     # https://github.com/mesonbuild/meson-python/issues/29
     "numpy>=1.26.0",
-    "matplotlib",
 ]
 classifiers = [
     "Development Status :: 1 - Planning",
@@ -39,6 +38,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Cython",
+    "Programming Language :: Python :: Free Threading :: 2 - Beta",
     "Programming Language :: C",
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Mathematics",
@@ -48,6 +48,12 @@ classifiers = [
     "Operating System :: Unix",
     "Operating System :: MacOS",
     "Natural Language :: English",
+]
+
+[project.optional-dependencies]
+# for seispy.plotting (and the examples)
+plot = [
+    "matplotlib",
 ]
 
 [project.license]
@@ -70,15 +76,15 @@ dev = [
     "meson-python>=0.15.0",
     "meson",
     "ninja",
-    "Cython>=3.0.8",
+    "Cython>=3.1.0",
     "numpy>=2.0.0",
 ]
 
 [tool.cibuildwheel]
 # The Python versions that are built follow `requires-python` above, and PyPy is not enabled (see the `enable` option), so
-# there is nothing to skip for those. Skip free threaded builds (the extension modules have not been tested without the GIL)
-# and 32 bit windows.
-skip = ["cp3??t-*", "*-win32"]
+# there is nothing to skip for those. The free threaded builds (cp314t, ...) are built and tested with the others. Skip 32 bit
+# windows.
+skip = ["*-win32"]
 build-frontend = "build[uv]"
 build-verbosity = 1
 

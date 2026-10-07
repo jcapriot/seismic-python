@@ -14,7 +14,8 @@ pip install .
 At the moment, the external package requirements are quite light:
 
 * `numpy>=1.26.0` To handle some numerical IO
-* `matplotlib`
+
+and, for `seispy.plotting` and the examples, `matplotlib` (`pip install seismic-python[plot]`).
 
 ### In place builds:
 In place builds, useful for developers, can be accomplished with:
@@ -247,6 +248,18 @@ from seispy.io import read_segy
 
 traces = read_segy("line.sgy") | bfilt(f_pass_low=40.0, f_stop_low=50.0) | gain(agc=True, wagc=0.5)
 ```
+
+## Free threaded python
+The extension modules say that they can run without the GIL, so they work with the free threaded builds of python (3.14t and
+later, `python3.14t`), and importing them does not turn the GIL back on. The SU library routines that the stages call have no
+state that threads share: their lookup tables and scratch arrays are arguments, the tables that SU made on first use (the
+Hilbert transform, the sinc interpolation) are made when the modules are imported, and the random numbers of `addnoise`,
+`jitter` and `randspike` come from a generator with its own state for each stage. So the parallelism below (`prefetch` and
+`pmap`) needs no GIL to be free of it: the python parts of the stages run in parallel too, not only the C kernels.
+
+What can be shared by threads is the stages (the specifications that are chained with `|`) and the traces, which are not changed
+by the stages. What can not is an iterator in the middle of a pipeline: take its traces from one thread at a time (which is
+what `prefetch` and `pmap` do). `tests/test_free_threading.py` has the threads that use the same stages and traces at once.
 
 ## Pipes and parallelism
 Processing steps can be written as input-less *stages* and chained with `|`, just like the shell:

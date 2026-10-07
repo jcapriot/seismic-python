@@ -870,6 +870,7 @@ cdef extern from "su.h" nogil:
     void su_stackup_finish(int n, const double *sum, const float *samplefold, float *out)
     void su_median_across(int n, int nwin, const float *rows, size_t stride, float *out, float *scratch)
     void su_mix_across(int n, int nwin, const float *rows, size_t stride, const float *w, float *out)
+    void su_addsinc_table()
     void su_gain_tpow_table(float *tpowfac, int nt, float tmin, float dt, float tpow, float tred)
     void su_gain_epow_table(float *epowfac, int nt, float tmin, float dt, float epow, float etpow)
     void su_gain(float *data, float tpow, float epow, float gpow,
