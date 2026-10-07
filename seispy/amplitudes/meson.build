@@ -3,10 +3,12 @@ module_path = 'seispy/amplitudes'
 python_sources = [
     '__init__.py',
     '_pertrace.py',
+    '_scan.py',
 ]
 
 cython_sources = [
     '_gain.pyx',
+    '_centsamp.pyx',
 ]
 
 foreach cy_source : cython_sources

@@ -2,6 +2,7 @@ module_path = 'seispy/synthetics'
 
 python_sources = [
     '__init__.py',
+    '_sources.py',
 ]
 
 cython_sources = [

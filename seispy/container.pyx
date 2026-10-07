@@ -5,6 +5,7 @@ import io
 from libc.stdio cimport FILE, fwrite, fread, SEEK_CUR
 from libc.stdlib cimport malloc, free
 from libc.string cimport memset, memcpy
+from libc.math cimport hypot
 cimport cython
 cimport cpython.buffer as pybuf
 
@@ -33,6 +34,14 @@ cdef spy_trace_header* copy_of_hdr(spy_trace_header *hdr_in) nogil:
     memcpy(hdr, hdr_in, SPY_TRC_HDR_SIZE)
     return hdr
 
+cdef double hdr_offset(const spy_trace_header *hdr) noexcept nogil:
+    cdef double dx = hdr.rx_loc[0] - hdr.tx_loc[0]
+    cdef double dy = hdr.rx_loc[1] - hdr.tx_loc[1]
+    cdef double distance = hypot(dx, dy)
+    if dx < 0.0 or (dx == 0.0 and dy < 0.0):
+        return -distance
+    return distance
+
 cdef float[::1] alloc_data(size_t n_sample):
     return np.empty(n_sample, dtype=np.float32)
 
@@ -41,6 +50,7 @@ cdef unsigned char[::1] alloc_bytes(size_t n_bytes):
 
 _SAMPLING_MAP = {'s':SamplingUnit.seconds, 'm':SamplingUnit.meters}
 _DOMAIN_MAP = {'unit':SamplingDomain.unit, 'fourier':SamplingDomain.fourier}
+_COORD_MAP = {'unknown':CoordinateUnit.unknown, 'length':CoordinateUnit.length, 'degrees':CoordinateUnit.degrees}
 
 @cython.final
 cdef class Trace:
@@ -65,6 +75,8 @@ cdef class Trace:
         sampling_unit='s',
         sampling_domain='unit',
         dtype=None,
+        coord_unit='unknown',
+        int trace_type=0,
     ):
         data = np.asarray(data)
         if dtype is None:
@@ -111,6 +123,13 @@ cdef class Trace:
         except KeyError:
             raise KeyError("Trace expected `sampling_domain` to be one of 'unit' (seconds) or 'fourier' (meters).")
 
+        try:
+            hdr.coord_unit = _COORD_MAP[coord_unit]
+        except KeyError:
+            free(hdr)
+            raise KeyError("Trace expected `coord_unit` to be one of 'unknown', 'length' or 'degrees'.")
+        hdr.trace_type = trace_type
+
         self.hdr = hdr
         self.hdr_owner = True
 
@@ -132,7 +151,10 @@ cdef class Trace:
 
     @property
     def header(self):
-        return self.hdr[0]
+        """The header values as a dict. ``offset`` is worked out from ``tx_loc`` and ``rx_loc``, it is not stored."""
+        cdef dict header = self.hdr[0]
+        header['offset'] = hdr_offset(self.hdr)
+        return header
 
     @staticmethod
     cdef Trace from_trace(spy_trace_header *hdr, float[::1] data, bint hdr_owner=False):
@@ -223,12 +245,24 @@ cdef class Trace:
             spy_trace_header *hdr
             float[::1] new_data
             dict header = self.hdr[0]
+        offset = fields.pop('offset', None)  # (not a stored value, see below)
         unknown = set(fields) - set(header)
         if unknown:
             raise TypeError(f"Unknown header values: {sorted(unknown)}, expected some of {sorted(header)}")
         if 'data_type' in fields:
             raise TypeError("The data_type of a trace follows its data (give a complex array to make a complex trace).")
+        if isinstance(fields.get('coord_unit'), str):
+            try:
+                fields['coord_unit'] = _COORD_MAP[fields['coord_unit']]
+            except KeyError:
+                raise KeyError("coord_unit is one of 'unknown', 'length' or 'degrees'.")
         header.update(fields)
+        if offset is not None:
+            # a receiver that is this far from the source, along x
+            if 'rx_loc' in fields:
+                raise TypeError("Give an offset or an rx_loc, the offset is the distance between tx_loc and rx_loc.")
+            tx = header['tx_loc']
+            header['rx_loc'] = [tx[0] + offset, tx[1], header['rx_loc'][2]]
         if data is None:
             new_data = np.array(self.data, dtype=np.float32)
             n_sample = header['n_sample']

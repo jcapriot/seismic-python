@@ -1,7 +1,7 @@
 from libc.stdio cimport FILE
 from .io cimport spy_off_t
 cimport cython
-from ._cy_enums cimport EnsembleType, SamplingDomain, SamplingUnit
+from ._cy_enums cimport EnsembleType, SamplingDomain, SamplingUnit, CoordinateUnit
 
 cdef extern from *:
     """
@@ -18,21 +18,29 @@ cdef:
         size_t n_sample
         double d_sample
         double sample_start
-        double offset
         double tx_loc[3]
         double rx_loc[3]
-        double mid_point[3]
-        int line_id
         int trace_id
         size_t ensemble_number
-        size_t ensemble_trace_number    # trace ID within ensemble
+        size_t ensemble_trace_number    # trace number within ensemble, 1 based like SU's cdpt (0 = not set)
         int sampling_unit               # 0 = s, 1  = meters
         int sampling_domain             # 0 (sample unit domain), 1 = sample_unit fourier domain
         int data_type                   # SPY_FLOAT32 or SPY_COMPLEX64. n_sample counts samples (not floats)
+        int coord_unit                  # CoordinateUnit of the x and y of tx_loc and rx_loc (z is an elevation)
+        int trace_type                  # trace identification code of SEG-Y (and SU's trid): 1 seismic data, 2 dead, ... 0 not set
+        int iline                       # the in-line and cross-line numbers of the bin of a 3D survey (0 = not set)
+        int xline
+        double source_static            # static shifts (s) of the source and of the receiver (SEG-Y: positive is later)
+        double receiver_static
+        double total_static             # the total static that has been applied to the data
 
     size_t SPY_TRC_HDR_SIZE
 
 cdef spy_trace_header* new_hdr(size_t n_sample=?) nogil
+
+# The (signed) distance from the source to the receiver, which is not kept in the header: the horizontal distance between
+# tx_loc and rx_loc, negative if the receiver is before the source (in x, or in y if they are at the same x).
+cdef double hdr_offset(const spy_trace_header *hdr) noexcept nogil
 cdef spy_trace_header* copy_of_hdr(spy_trace_header *hdr_in) nogil
 
 # the number of floats that make up one sample

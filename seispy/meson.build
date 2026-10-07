@@ -10,6 +10,8 @@ subdir('transforms')
 subdir('convolution')
 subdir('attributes')
 subdir('decon')
+subdir('noise')
+subdir('waveforms')
 subdir('synthetics')
 
 python_sources = [

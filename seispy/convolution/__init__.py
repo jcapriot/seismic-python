@@ -1,7 +1,7 @@
 """
 Convolution and correlation: SUACOR, SUCONV and SUXCOR (``su/main/convolution_correlation``).
 
-All three are done in the time domain, as in the SU sources (with the ``convolve_cwp`` and ``xcor`` of the SU library),
+``acor``, ``conv`` and ``xcor`` are done in the time domain, as in the SU sources (with the ``convolve_cwp`` and ``xcor`` of the SU library),
 by numpy's ``convolve`` and ``correlate``. The ``sufile`` options of SU become a ``Trace`` (or arrays), and suxcor's
 ``panel`` option, which correlates windows of a whole gather, is not supported.
 
@@ -15,7 +15,7 @@ import numpy as np
 from ..container import as_trace_iterator, from_iterable
 from ..stage import Stage, per_trace, stage
 
-__all__ = ['acor', 'conv', 'xcor']
+__all__ = ['acor', 'conv', 'xcor', 'acorfrac', 'refcon']
 
 
 def _correlate(x, y, first_lag, n_lags):
@@ -157,3 +157,99 @@ def xcor(filter, *, first=True, vibroseis=0):
     kwargs = dict(first=first, vibroseis=vibroseis)
     _xcor((), filter, **kwargs)  # check the parameters now
     return Stage(_xcor, filter, parallelism='trace', name='xcor', **kwargs)
+
+
+# ------------------------------------------------------------------------------------------------------- acorfrac
+def _acorfrac(upstream, *, a=0.0, b=0.0, ntout=None, sym=False):
+    if ntout is not None and ntout < 1:
+        raise ValueError("ntout must be at least 1")
+
+    def acorfrac_trace(trace):
+        x = np.asarray(trace)
+        nt = x.shape[0]
+        if nt == 0:
+            return trace
+        n_out = nt if ntout is None else ntout
+        # padded so that the correlation does not wrap around (sufracacor's is a length that is fast for its FFT)
+        n_fft = 2 * nt
+        if n_out > n_fft:
+            raise ValueError(f"ntout={n_out} is more than the {n_fft} samples that the transform has")
+        # the SU transform has the conjugate of numpy's kernel
+        spectrum = np.conj(np.fft.rfft(x.astype(np.float64), n_fft))
+        amplitude = np.abs(spectrum)
+        phase = np.arctan2(spectrum.imag, spectrum.real)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            factor = np.where(amplitude > 0.0, amplitude ** a, 0.0) * np.exp(-1j * b * phase)
+        y = np.fft.irfft(np.conj(spectrum * factor), n_fft)
+        if sym:
+            # the lags -(n_out - 1) / 2 to (n_out - 1) / 2, around the zero lag
+            first = -((n_out - 1) // 2)
+            y = y[(first + np.arange(n_out)) % n_fft]
+        else:
+            y = y[:n_out]
+        return trace.replace(y.astype(np.float32))
+
+    return per_trace(upstream, acorfrac_trace)
+
+
+# SUACORFRAC: general fractional autocorrelation / convolution, in the frequency domain.
+#
+# a : the exponent of the amplitude, default 0
+# b : multiplier of the phase, default 0
+# ntout : the number of samples that are output, default the number of samples of the trace
+# sym : the output is from lag -(ntout - 1) / 2 to lag +(ntout - 1) / 2 (zero lag in the middle), not from lag 0
+#
+# Aout exp(-i Pout) = Ain^(1 + a) exp(-i (1 - b) Pin) (suacorfrac writes it with 1 + b, but its (a, b) = (1, 1) is the
+# autocorrelation, which has no phase, and (1, -1) the autoconvolution, which has twice the phase). (a, b) = (1, 1) is the autocorrelation, (.5, .5) the half
+# autocorrelation, (0, 0) leaves the data as it is, (.5, -.5) is the half autoconvolution and (1, -1) the autoconvolution.
+#
+# Where suacorfrac says what it does, this does that: its dopow() returns 1 whenever a is 0 (so that b has no effect then),
+# it does not divide its inverse FFT by the length of the transform (so that (0, 0) does not change the data), it
+# does not use ntout at all, and its sym is a sign change of every other frequency, which is a shift by half of a longer
+# padded trace. The transform is padded to twice the length of the trace.
+acorfrac = stage(_acorfrac, parallelism='trace', name='acorfrac', validate=True)
+
+
+# --------------------------------------------------------------------------------------------------------- refcon
+def _refcon(upstream, forshot, *, xy=0):
+    if xy < 0:
+        raise ValueError(f"xy={xy} must not be negative")
+    source = as_trace_iterator(upstream)
+
+    def traces():
+        forward = iter(forshot)
+        current = None
+        for _ in range(xy + 1):
+            current = next(forward, None)
+            if current is None:
+                raise ValueError("Can't get the first requested forward trace.")
+        for reverse in source:
+            out = np.convolve(np.asarray(current), np.asarray(reverse))
+            # (the sample interval of the output is half that of the input)
+            yield reverse.replace(out, d_sample=reverse.d_sample / 2)
+            current = next(forward, None)
+            if current is None:
+                return
+
+    return from_iterable(traces())
+
+
+def refcon(forshot, *, xy=0):
+    """Convolve each trace (the reverse shot) with a trace of a forward shot (SUREFCON), for the refraction convolution
+    section method of Palmer and Jones.
+
+    Parameters
+    ----------
+    forshot : iterable of Trace
+        The forward shot traces (SU's ``sufile``). Trace ``n`` of the stream is convolved with trace ``n + xy`` of this
+        one, until either of them is out of traces. It is read once, so a one-shot iterator can be used with this
+        stage once.
+    xy : int
+        The number of traces that the forward shot is offset from the first trace, default 0.
+
+    The traces that come out are ``nt + nforshot - 1`` samples long, and have half the sample interval of the input (the
+    SU program does that to them too).
+    """
+    if xy < 0:
+        raise ValueError(f"xy={xy} must not be negative")
+    return Stage(_refcon, forshot, parallelism='serial', name='refcon', xy=xy)

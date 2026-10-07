@@ -114,9 +114,11 @@ cdef class plane(spyc.BaseTraceIterator):
 
         cdef spyc.spy_trace_header *hdr = spyc.new_hdr()
         hdr.d_sample = self.dt
-        hdr.offset = fabs(self.offset)
-        hdr.line_id = 1
         hdr.trace_id = self.i + 1
+        hdr.ensemble_number = 1  # (one gather)
+        hdr.ensemble_trace_number = self.i + 1
+        hdr.coord_unit = spyc.CoordinateUnit.length
+        hdr.trace_type = 1  # seismic data
         hdr.tx_loc[0] = self.i
         hdr.rx_loc[0] = self.i + self.offset
 

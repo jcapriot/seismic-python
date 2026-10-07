@@ -213,3 +213,110 @@ def _r2ai(upstream):
 
 # SUR2AI: reflectivity to acoustic impedance (inversion), a[i+1] = a[i] * (1 - r[i]) / (1 + r[i]), starting from 1
 r2ai = stage(_r2ai, parallelism='trace', name='r2ai', validate=True)
+
+
+# ---------------------------------------------------------------------------------------------------------- divcor
+def _divcor(upstream, *, trms=None, vrms=None, vt=None):
+    n_t = 0 if trms is None else np.atleast_1d(trms).shape[0]
+    n_v = 0 if vrms is None else np.atleast_1d(vrms).shape[0]
+    if n_t != n_v:
+        raise ValueError("number of trms and vrms must be equal")
+    if vt is None:
+        if n_t > 1 and (np.diff(np.atleast_1d(trms)) <= 0).any():
+            raise ValueError("trms must increase monotonically")
+    else:
+        vt = np.asarray(vt, dtype=np.float64)
+        if vt.ndim != 1 or vt.shape[0] < 2:
+            raise ValueError("vt must have a velocity for each sample, at least 2 of them.")
+    cache = {}
+
+    def correction(n, dt, tmin):
+        key = (n, dt, tmin)
+        if key not in cache:
+            t = tmin + np.arange(n) * dt
+            if vt is not None:
+                if vt.shape[0] != n:
+                    raise ValueError(f"vt has {vt.shape[0]} velocities, the trace has {n} samples")
+                v = vt
+                denom = (tmin + dt) * vt[1] ** 2
+            else:
+                times = np.array([0.0, dt]) if trms is None else np.atleast_1d(np.asarray(trms, dtype=np.float64))
+                velocities = np.array([1500.0, 1500.0]) if vrms is None else np.atleast_1d(np.asarray(vrms, dtype=np.float64))
+                if times.shape[0] == 1:  # (one value is a constant velocity)
+                    times = np.array([times[0], times[0] + dt])
+                    velocities = np.array([velocities[0], velocities[0]])
+                v = np.interp(t, times, velocities)  # (linear, and constant outside)
+                # (the second pick, as in sudivcor)
+                denom = times[1] * velocities[1] ** 2
+            cache.clear()
+            cache[key] = (t * v * v / denom).astype(F32)
+        return cache[key]
+
+    def divcor_trace(trace):
+        x = np.asarray(trace)
+        dt = trace.d_sample
+        if not dt:
+            raise ValueError("The trace has no sample interval.")
+        return trace.replace(x * correction(x.shape[0], dt, trace.header['sample_start']))
+
+    return per_trace(upstream, divcor_trace, on_complex='native')
+
+
+# SUDIVCOR: divergence (spreading) correction, which multiplies the trace by t v(t)^2 / (t1 v1^2), where v is the rms
+# velocity function.
+#
+# trms, vrms : times (s) that must increase and the rms velocities for them. Linearly interpolated, constant outside.
+#              One pair is a constant velocity. Default 1500 m/s.
+# vt : a velocity for every sample of the traces (which makes trms and vrms not used)
+#
+# t1 and v1 are the second time and velocity of the function (as sudivcor has it, which is not the first: with no
+# function given this is t / dt). The time of the first sample is the start time of the trace.
+divcor = stage(_divcor, parallelism='trace', name='divcor', validate=True)
+
+
+# -------------------------------------------------------------------------------------------------------- centsamp
+def _centsamp(upstream, *, nvals_min=1, dt=None):
+    if nvals_min < 1:
+        raise ValueError("nvals_min must be at least 1")
+    from ._centsamp import centsamp as _centsamp_trace
+
+    def centsamp_trace(trace):
+        sample_dt = trace.d_sample or dt or 0.004  # (as SU does, .004 if there is nothing at all)
+        return trace.replace(_centsamp_trace(np.ascontiguousarray(trace, dtype=np.float32), sample_dt, nvals_min))
+
+    return per_trace(upstream, centsamp_trace)
+
+
+# SUCENTSAMP: replace each lobe of the trace (between zero crossings, and where it has an inflection) with a spike at its
+# centroid, which is the area of the lobe.
+#
+# nvals_min : the least number of samples in a lobe for it to be kept, default 1
+# dt : sample interval (s) for traces that do not have one
+#
+# (The last lobe of a trace is not ended by a zero crossing, so it is not given a spike.)
+centsamp = stage(_centsamp, parallelism='trace', name='centsamp', validate=True)
+
+
+# ------------------------------------------------------------------------------------------------------ impedance
+def _impedance(upstream, *, v0=1500.0, rho0=1.0e6):
+    z0 = v0 * rho0
+
+    def impedance_trace(trace):
+        r = np.clip(np.asarray(trace).astype(np.float64), -0.9999, 0.9999)
+        # z[k] = z[k - 1] (1 + r[k - 1]) / (1 - r[k - 1]), and z[0] = v0 rho0
+        ratios = (1.0 + r) / (1.0 - r)
+        z = z0 * np.concatenate(([1.0], np.cumprod(ratios[:-1])))
+        return trace.replace(z.astype(F32))
+
+    return per_trace(upstream, impedance_trace)
+
+
+# SUIMPEDANCE: reflection coefficients to impedances, [1 - R(k)] Z(k) = [1 + R(k)] Z(k - 1), starting from
+# v0 rho0 at the first sample.
+#
+# v0 : the velocity (m/s) at the first sample, default 1500
+# rho0 : the density (g/m^3) at the first sample, default 1e6
+#
+# The reflection coefficients are limited to +-.9999. (`r2ai` is the same with the opposite sign convention for the
+# reflection coefficient, and the impedance starting at 1.)
+impedance = stage(_impedance, parallelism='trace', name='impedance', validate=True)

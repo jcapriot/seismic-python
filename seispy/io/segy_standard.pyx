@@ -332,6 +332,45 @@ def get_endian_keys():
         'system':SEGY_SYSTEM_ENDIAN_FLAG,
     }
 
+cdef double _to_degrees(double value, int coorunit) noexcept nogil:
+    """A scaled coordinate, which is in the unit that the file says, in decimal degrees"""
+    cdef double magnitude, deg, minutes, seconds, whole
+    if coorunit == 2:  # seconds of arc
+        return value / 3600.0
+    if coorunit == 4:  # degrees, minutes and seconds, packed: DDDMMSS.ss
+        magnitude = fabs(value)
+        deg = floor(magnitude / 10000.0)
+        minutes = floor((magnitude - deg * 10000.0) / 100.0)
+        seconds = magnitude - deg * 10000.0 - minutes * 100.0
+        whole = deg + minutes / 60.0 + seconds / 3600.0
+        return -whole if value < 0.0 else whole
+    return value
+
+
+cdef i2 _time_scalar(double largest_ms) noexcept nogil:
+    """The scalar (SEG-Y's tm_scal) that keeps the most digits of times, up to this large (ms), in 16 bits"""
+    cdef double log_scale
+    cdef i2 scalar
+    if largest_ms == 0.0:
+        return 0
+    log_scale = log10(largest_ms / INT16_MAX)
+    if log_scale > 0:
+        log_scale = min(ceil(log_scale), 4)
+        return <i2> (10 ** <int> log_scale)
+    log_scale = min(floor(-log_scale), 4)
+    scalar = <i2> (10 ** <int> log_scale)
+    return -scalar
+
+
+cdef i2 _scaled_time(double ms, i2 scalar) noexcept nogil:
+    """A time (ms) as the 16 bit integer that goes with the scalar"""
+    if scalar > 0:
+        ms = ms / scalar
+    elif scalar < 0:
+        ms = ms * -scalar
+    return <i2> floor(ms + 0.5)
+
+
 cdef class SEGYTrace:
     cdef:
         trace_header hdr
@@ -377,26 +416,19 @@ cdef class SEGYTrace:
 
             ext_hdr.dt = spy_hdr.d_sample * 1_000_000.0 # in micro seconds
 
-            # in milliseconds
+            # The delay and the statics are in milliseconds, and share one scalar (which keeps as many significant
+            # digits as can be kept for the largest of them).
             ms_t0 = spy_hdr.sample_start * 1_000.0
+            ms_ss = spy_hdr.source_static * 1_000.0
+            ms_rs = spy_hdr.receiver_static * 1_000.0
+            ms_ts = spy_hdr.total_static * 1_000.0
+            hdr.tm_scal = _time_scalar(max(max(fabs(ms_t0), fabs(ms_ss)), max(fabs(ms_rs), fabs(ms_ts))))
+            hdr.delay = _scaled_time(ms_t0, hdr.tm_scal)
+            hdr.shstat = _scaled_time(ms_ss, hdr.tm_scal)
+            hdr.rcstat = _scaled_time(ms_rs, hdr.tm_scal)
+            hdr.stapply = _scaled_time(ms_ts, hdr.tm_scal)
 
-            # shift to store as many significant digits as possible
-            if ms_t0 != 0.0:
-                log_scale = log10(fabs(ms_t0)/INT16_MAX)
-                if log_scale > 0:
-                    log_scale = min(ceil(log_scale), 4)
-                    hdr.tm_scal = <i2> (10**log_scale)
-                    hdr.delay = <i2> (ms_t0 / hdr.tm_scal)
-                else:
-                    log_scale = min(floor(-log_scale), 4)
-                    hdr.tm_scal = <i2> (10**log_scale)
-                    hdr.delay = <i2> (ms_t0 * hdr.tm_scal)
-                    hdr.tm_scal *= -1
-            else:
-                hdr.delay = 0
-                hdr.tm_scal = 0
-
-            ext_hdr.offset = spy_hdr.offset
+            ext_hdr.offset = spyc.hdr_offset(spy_hdr)
 
             ext_hdr.sht_x = spy_hdr.tx_loc[0]
             ext_hdr.sht_y = spy_hdr.tx_loc[1]
@@ -406,17 +438,24 @@ cdef class SEGYTrace:
             ext_hdr.rec_y = spy_hdr.rx_loc[1]
             ext_hdr.relev = spy_hdr.rx_loc[2]
 
-            ext_hdr.cdp_x = spy_hdr.mid_point[0]
-            ext_hdr.cdp_y = spy_hdr.mid_point[1]
+            # (the midpoint is not kept, it is the mean of the source and the receiver)
+            ext_hdr.cdp_x = 0.5 * (spy_hdr.tx_loc[0] + spy_hdr.rx_loc[0])
+            ext_hdr.cdp_y = 0.5 * (spy_hdr.tx_loc[1] + spy_hdr.rx_loc[1])
 
             ext_hdr.n_exttrchdr = 1
 
-            # hdr.trctype = spy_hdr.line_id
-            hdr.chan = spy_hdr.line_id
+            hdr.trctype = spy_hdr.trace_type
+            hdr.iline = spy_hdr.iline
+            hdr.xline = spy_hdr.xline
             ext_hdr.linetrc = spy_hdr.trace_id
-            hdr.coorunit = 1
+            if spy_hdr.coord_unit == spyc.CoordinateUnit.length:
+                hdr.coorunit = 1
+            elif spy_hdr.coord_unit == spyc.CoordinateUnit.degrees:
+                hdr.coorunit = 3  # (decimal degrees)
+            else:
+                hdr.coorunit = 0
             ext_hdr.cdp = spy_hdr.ensemble_number
-            hdr.cdptrc = spy_hdr.ensemble_trace_number + 1
+            hdr.cdptrc = spy_hdr.ensemble_trace_number  # (1 based, 0 is not set)
             hdr.header_name = trc_name
             ext_hdr.header_name = ext_name
 
@@ -439,6 +478,8 @@ cdef class SEGYTrace:
             bint supported = True
             double xy_scale = 1.0
             double z_scale = 1.0
+            double file_offset = 0.0
+            double time_scale = 1.0
 
         with nogil:
             spy_hdr.n_sample = self.ext_hdr.nsamps
@@ -471,15 +512,21 @@ cdef class SEGYTrace:
                 # as well, so this is a format we really do not know how to convert.
                 supported = False
 
+            # The delay and the statics are in ms, times the scalar (a positive scalar multiplies and a negative one
+            # divides, and 0 is the same as 1).
             if self.hdr.tm_scal > 0:
-                spy_hdr.sample_start = (<double> self.hdr.delay) * self.hdr.tm_scal
+                time_scale = self.hdr.tm_scal
             elif self.hdr.tm_scal < 0:
-                spy_hdr.sample_start = (<double> self.hdr.delay) / -self.hdr.tm_scal
-            spy_hdr.sample_start /= 1_000.0
+                time_scale = 1.0 / -self.hdr.tm_scal
+            time_scale /= 1_000.0
+            spy_hdr.sample_start = self.hdr.delay * time_scale
+            spy_hdr.source_static = self.hdr.shstat * time_scale
+            spy_hdr.receiver_static = self.hdr.rcstat * time_scale
+            spy_hdr.total_static = self.hdr.stapply * time_scale
 
             if self.n_ext_hdr:
                 spy_hdr.d_sample = self.ext_hdr.dt / 1_000_000.0
-                spy_hdr.offset = self.ext_hdr.offset
+                file_offset = self.ext_hdr.offset
 
                 spy_hdr.tx_loc[0] = self.ext_hdr.sht_x
                 spy_hdr.tx_loc[1] = self.ext_hdr.sht_y
@@ -488,9 +535,6 @@ cdef class SEGYTrace:
                 spy_hdr.rx_loc[0] = self.ext_hdr.rec_x
                 spy_hdr.rx_loc[1] = self.ext_hdr.rec_y
                 spy_hdr.rx_loc[2] = self.ext_hdr.relev
-
-                spy_hdr.mid_point[0] = self.ext_hdr.cdp_x
-                spy_hdr.mid_point[1] = self.ext_hdr.cdp_y
 
                 spy_hdr.trace_id = self.ext_hdr.linetrc
                 spy_hdr.ensemble_number = self.ext_hdr.cdp
@@ -506,7 +550,7 @@ cdef class SEGYTrace:
                     z_scale = 1.0 / -self.hdr.ed_scal
 
                 spy_hdr.d_sample = self.hdr.dt / 1_000_000.0
-                spy_hdr.offset = self.hdr.offset
+                file_offset = self.hdr.offset
 
                 spy_hdr.tx_loc[0] = self.hdr.sht_x * xy_scale
                 spy_hdr.tx_loc[1] = self.hdr.sht_y * xy_scale
@@ -516,9 +560,6 @@ cdef class SEGYTrace:
                 spy_hdr.rx_loc[1] = self.hdr.rec_y * xy_scale
                 spy_hdr.rx_loc[2] = self.hdr.relev * z_scale
 
-                spy_hdr.mid_point[0] = self.hdr.cdp_x * xy_scale
-                spy_hdr.mid_point[1] = self.hdr.cdp_y * xy_scale
-
                 spy_hdr.trace_id = self.hdr.linetrc
                 spy_hdr.ensemble_number = self.hdr.cdp
 
@@ -526,11 +567,28 @@ cdef class SEGYTrace:
                 # (an extended header can leave this blank)
                 spy_hdr.d_sample = self.hdr.dt / 1_000_000.0
 
-            spy_hdr.mid_point[2] = 0.5 * (spy_hdr.tx_loc[2] + spy_hdr.rx_loc[2])
+            # Angles are always decimal degrees (the file's can be seconds of arc, or degrees, minutes and seconds).
+            if self.hdr.coorunit == 1:
+                spy_hdr.coord_unit = spyc.CoordinateUnit.length
+            elif self.hdr.coorunit >= 2 and self.hdr.coorunit <= 4:
+                spy_hdr.coord_unit = spyc.CoordinateUnit.degrees
+                spy_hdr.tx_loc[0] = _to_degrees(spy_hdr.tx_loc[0], self.hdr.coorunit)
+                spy_hdr.tx_loc[1] = _to_degrees(spy_hdr.tx_loc[1], self.hdr.coorunit)
+                spy_hdr.rx_loc[0] = _to_degrees(spy_hdr.rx_loc[0], self.hdr.coorunit)
+                spy_hdr.rx_loc[1] = _to_degrees(spy_hdr.rx_loc[1], self.hdr.coorunit)
+            else:
+                spy_hdr.coord_unit = spyc.CoordinateUnit.unknown
 
-            # hdr.trctype = spy_hdr.line_id
-            spy_hdr.line_id = self.hdr.chan
-            spy_hdr.ensemble_trace_number = self.hdr.cdptrc - 1
+            # The offset is not kept in the header, it is the distance from the source to the receiver. A file with an
+            # offset but no coordinates (common) puts the receiver that far from the source, along x (a length, so not
+            # when the coordinates are angles).
+            if spy_hdr.coord_unit != spyc.CoordinateUnit.degrees and file_offset != 0.0 and spy_hdr.rx_loc[0] == spy_hdr.tx_loc[0] and spy_hdr.rx_loc[1] == spy_hdr.tx_loc[1]:
+                spy_hdr.rx_loc[0] = spy_hdr.tx_loc[0] + file_offset
+
+            spy_hdr.trace_type = self.hdr.trctype
+            spy_hdr.iline = self.hdr.iline
+            spy_hdr.xline = self.hdr.xline
+            spy_hdr.ensemble_trace_number = max(self.hdr.cdptrc, 0)  # (1 based, 0 is not set)
 
         if not supported:
             raise ValueError(f"Unable to convert SEG-Y data format {self._dtype} to floating point.")

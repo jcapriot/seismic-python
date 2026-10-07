@@ -44,8 +44,11 @@ cdef class spike(spyc.BaseTraceIterator):
         hdr.d_sample = self.dt
         hdr.tx_loc[0] = self.i
         hdr.rx_loc[0] = self.i + self.offset
-        hdr.offset = self.offset
         hdr.trace_id = self.i + 1
+        hdr.ensemble_number = 1  # (one gather)
+        hdr.ensemble_trace_number = self.i + 1
+        hdr.coord_unit = spyc.CoordinateUnit.length
+        hdr.trace_type = 1  # seismic data
 
         self.i += 1
         return spyc.Trace.from_trace(hdr, data, True)

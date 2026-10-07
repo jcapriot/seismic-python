@@ -208,15 +208,14 @@ cdef class synlv(spyc.BaseTraceIterator):
 
         cdef spyc.spy_trace_header * hdr = spyc.new_hdr(self.nt)
 
-        hdr.line_id = 1
         hdr.trace_id = self.tracl
+        hdr.coord_unit = spyc.CoordinateUnit.length
+        hdr.trace_type = 1  # seismic data
         hdr.d_sample = self.dt
         hdr.sample_start = self.ft
 
         hdr.tx_loc[0] = xs
         hdr.rx_loc[0] = xr
-        hdr.mid_point[0] = 0.5 * (xs + xr)
-        hdr.offset = fabs(xo)
         hdr.ensemble_number = 1 + self.ixsm
         hdr.ensemble_trace_number = 1 + self.ixo
 

@@ -152,7 +152,7 @@ def test_header_conversion(tmp_path):
     assert tx[1] == pytest.approx(-50.0)
     assert tx[2] == pytest.approx(50.0)
     assert tr.header['rx_loc'][2] == pytest.approx(70.0)
-    assert tr.header['mid_point'][2] == pytest.approx(60.0)
+    assert 'mid_point' not in tr.header
 
 
 def test_blank_trace_dt_falls_back_to_binary_header(tmp_path):
@@ -217,3 +217,129 @@ def test_segy_trace_write_appends(tmp_path):
         segy_tr.write(f)
         segy_tr.write(f)
     assert path.stat().st_size == 2 * (2 * trace_header_size() + 20)
+
+
+@pytest.mark.parametrize('cdptrc, expected', [(3, 3), (1, 1), (0, 0)])
+def test_ensemble_trace_number_is_one_based(tmp_path, cdptrc, expected):
+    data = _big_file()
+    _patch(data, 24, '>i', cdptrc)
+    path = tmp_path / "cdptrc.segy"
+    path.write_bytes(data)
+    (tr,) = list(read_segy(path))
+    assert tr.header['ensemble_trace_number'] == expected  # (0, not set, used to underflow)
+
+
+def test_ensemble_trace_number_written_as_is():
+    from seispy.io.segy_standard import SEGYTrace
+
+    tr = Trace(np.zeros(4, dtype=np.float32), d_sample=0.004).replace(ensemble_trace_number=5)
+    assert SEGYTrace.from_seispy(tr).trace_header['cdptrc'] == 5
+
+
+# ---------------------------------------------------------------- coordinate unit, trace type and statics
+def _read_patched(tmp_path, patches):
+    data = _big_file()
+    for offset, fmt, value in patches:
+        _patch(data, offset, fmt, value)
+    path = tmp_path / "patched.segy"
+    path.write_bytes(data)
+    (tr,) = list(read_segy(path))
+    return tr
+
+
+def test_length_coordinates(tmp_path):
+    tr = _read_patched(tmp_path, [(88, '>h', 1), (70, '>h', 1), (72, '>i', 500), (80, '>i', 700)])
+    assert tr.header['coord_unit'] == 1
+    assert tr.header['tx_loc'][0] == 500.0 and tr.header['rx_loc'][0] == 700.0
+    assert tr.header['offset'] == 200.0
+
+
+def test_unit_not_given_is_unknown(tmp_path):
+    assert _read_patched(tmp_path, []).header['coord_unit'] == 0
+
+
+def test_arc_seconds_become_degrees(tmp_path):
+    # 7200 seconds is 2 degrees (the scalar divides by 100), and -1800 seconds is half a degree south
+    tr = _read_patched(tmp_path, [(88, '>h', 2), (70, '>h', -100), (72, '>i', 7200 * 100), (76, '>i', -1800 * 100)])
+    assert tr.header['coord_unit'] == 2
+    assert tr.header['tx_loc'][0] == pytest.approx(2.0)
+    assert tr.header['tx_loc'][1] == pytest.approx(-0.5)
+
+
+def test_decimal_degrees_are_kept(tmp_path):
+    tr = _read_patched(tmp_path, [(88, '>h', 3), (70, '>h', -10000), (72, '>i', -1051234)])
+    assert tr.header['coord_unit'] == 2
+    assert tr.header['tx_loc'][0] == pytest.approx(-105.1234)
+
+
+def test_degrees_minutes_seconds(tmp_path):
+    # 105 degrees 30 minutes 36 seconds west is -1053036.00, and 40 degrees 15 minutes 18 seconds north is 401518.00
+    tr = _read_patched(tmp_path, [(88, '>h', 4), (70, '>h', -100), (72, '>i', -105303600), (76, '>i', 40151800)])
+    assert tr.header['coord_unit'] == 2
+    assert tr.header['tx_loc'][0] == pytest.approx(-(105 + 30 / 60 + 36 / 3600))
+    assert tr.header['tx_loc'][1] == pytest.approx(40 + 15 / 60 + 18 / 3600)
+
+
+def test_trace_type_is_read(tmp_path):
+    assert _read_patched(tmp_path, [(28, '>h', 2)]).header['trace_type'] == 2
+
+
+def test_statics_are_read_in_seconds(tmp_path):
+    # scalar 10 multiplies: 12 -> 120 ms, ; and the delay uses the same one
+    tr = _read_patched(tmp_path, [(214, '>h', 10), (108, '>h', 5), (98, '>h', 12), (100, '>h', -7), (102, '>h', 3)])
+    assert tr.header['sample_start'] == pytest.approx(0.05)
+    assert tr.header['source_static'] == pytest.approx(0.12)
+    assert tr.header['receiver_static'] == pytest.approx(-0.07)
+    assert tr.header['total_static'] == pytest.approx(0.03)
+
+
+def test_no_time_scalar_means_milliseconds(tmp_path):
+    # the scalar is 0 in files that are older than that (and it means 1, the delay used to be left out)
+    tr = _read_patched(tmp_path, [(108, '>h', 250), (98, '>h', 4)])
+    assert tr.header['sample_start'] == pytest.approx(0.25)
+    assert tr.header['source_static'] == pytest.approx(0.004)
+
+
+def test_negative_time_scalar_divides(tmp_path):
+    tr = _read_patched(tmp_path, [(214, '>h', -100), (98, '>h', 250)])
+    assert tr.header['source_static'] == pytest.approx(0.0025)
+
+
+def test_written_header_has_the_new_values():
+    from seispy.io.segy_standard import SEGYTrace
+
+    tr = Trace(np.zeros(4, dtype=np.float32), d_sample=0.004, sample_start=0.1, coord_unit='degrees', trace_type=2)
+    tr = tr.replace(source_static=0.012, receiver_static=-0.007, total_static=0.0)
+    h = SEGYTrace.from_seispy(tr).trace_header
+    assert h['trctype'] == 2
+    assert h['coorunit'] == 3
+    scalar = h['tm_scal']
+    factor = scalar if scalar > 0 else (1.0 / -scalar if scalar < 0 else 1.0)
+    assert h['delay'] * factor == pytest.approx(100.0, abs=0.5 * factor)
+    assert h['shstat'] * factor == pytest.approx(12.0, abs=0.5 * factor)
+    assert h['rcstat'] * factor == pytest.approx(-7.0, abs=0.5 * factor)
+    assert h['stapply'] == 0
+
+
+def test_defaults_of_the_new_header_values():
+    tr = Trace(np.zeros(4, dtype=np.float32), d_sample=0.004)
+    h = tr.header
+    assert h['coord_unit'] == 0 and h['trace_type'] == 0
+    assert h['source_static'] == h['receiver_static'] == h['total_static'] == 0.0
+    assert tr.replace(coord_unit='length').header['coord_unit'] == 1
+    with pytest.raises(KeyError):
+        Trace(np.zeros(4, dtype=np.float32), d_sample=0.004, coord_unit='parsecs')
+
+
+def test_inline_and_crossline_numbers(tmp_path):
+    tr = _read_patched(tmp_path, [(188, '>i', 1250), (192, '>i', 4310)])
+    assert tr.header['iline'] == 1250 and tr.header['xline'] == 4310
+    assert _read_patched(tmp_path, []).header['iline'] == 0
+
+
+def test_inline_and_crossline_numbers_are_written():
+    from seispy.io.segy_standard import SEGYTrace
+
+    tr = Trace(np.zeros(4, dtype=np.float32), d_sample=0.004).replace(iline=7, xline=-3)
+    h = SEGYTrace.from_seispy(tr).trace_header
+    assert h['iline'] == 7 and h['xline'] == -3

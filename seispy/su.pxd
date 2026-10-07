@@ -800,6 +800,7 @@ cdef extern from "su.h" nogil:
     void su_bflowpass(int zerophase, int npoles, float f3db, size_t nt, float *data_in, float *data_out);
 
     # amplitudes
+    void su_centsamp(float *rt, float *ct, float *mt, const float *time, int nt, float dt, int nvals_min)
     void su_gain_tpow_table(float *tpowfac, int nt, float tmin, float dt, float tpow, float tred)
     void su_gain_epow_table(float *epowfac, int nt, float tmin, float dt, float epow, float etpow)
     void su_gain(float *data, float tpow, float epow, float gpow,

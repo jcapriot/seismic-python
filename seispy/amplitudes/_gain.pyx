@@ -255,7 +255,7 @@ cdef class _gain(spyc.BaseTraceIterator):
             data = spyc.alloc_data(n_sample)
             data[:] = data_in
 
-        self._apply(&data[0], n_sample, <float> trace.hdr.sample_start, dt, trace.hdr.offset)
+        self._apply(&data[0], n_sample, <float> trace.hdr.sample_start, dt, spyc.hdr_offset(trace.hdr))
         return spyc.Trace.from_trace(spyc.copy_of_hdr(trace.hdr), data, True)
 
     cdef spyc.Trace _next_panel(self):
@@ -296,7 +296,7 @@ cdef class _gain(spyc.BaseTraceIterator):
                         big[k * n:(k + 1) * n] = tr.data
                     tr = traces[0]
                     # (SU uses the offset of the last trace read when reducing the time axis)
-                    self._apply(&big[0], n * ntr, <float> tr.hdr.sample_start, dt, (<spyc.Trace> traces[ntr - 1]).hdr.offset)
+                    self._apply(&big[0], n * ntr, <float> tr.hdr.sample_start, dt, spyc.hdr_offset((<spyc.Trace> traces[ntr - 1]).hdr))
                     for k in range(ntr):
                         tr = traces[k]
                         data = spyc.alloc_data(n)

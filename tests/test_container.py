@@ -111,3 +111,30 @@ def test_trace_buffers_are_freed():
     gc.collect()
     growth = _rss_bytes() - before
     assert growth < 20_000_000
+
+
+# --------------------------------------------------------------------------- derived header values (not stored)
+def test_offset_is_the_distance_from_the_source_to_the_receiver():
+    import numpy as np
+    from seispy.container import Trace
+
+    t = Trace(np.zeros(4, dtype=np.float32), d_sample=0.004, tx_loc=[10.0, 0.0, 0.0], rx_loc=[13.0, 4.0, 0.0])
+    assert t.header['offset'] == 5.0
+    assert t.replace(rx_loc=[7.0, 4.0, 0.0]).header['offset'] == -5.0  # (before the source)
+    assert t.replace(rx_loc=[10.0, -2.0, 0.0]).header['offset'] == -2.0  # (same x: by y)
+    assert Trace(np.zeros(4, dtype=np.float32), d_sample=0.004).header['offset'] == 0.0
+    assert 'mid_point' not in t.header
+
+
+def test_replace_offset_moves_the_receiver():
+    import numpy as np
+    import pytest
+    from seispy.container import Trace
+
+    t = Trace(np.zeros(4, dtype=np.float32), d_sample=0.004, tx_loc=[10.0, 3.0, 1.0], rx_loc=[0.0, 0.0, 2.0])
+    moved = t.replace(offset=-250.0)
+    assert moved.header['offset'] == -250.0
+    assert moved.header['tx_loc'] == [10.0, 3.0, 1.0]
+    assert moved.header['rx_loc'] == [-240.0, 3.0, 2.0]
+    with pytest.raises(TypeError):
+        t.replace(offset=1.0, rx_loc=[1.0, 1.0, 1.0])

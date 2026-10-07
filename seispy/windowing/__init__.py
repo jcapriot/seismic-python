@@ -1,5 +1,6 @@
 """
-Windowing and muting programs: SUMUTE, SUWIND and SUKILL (``su/main/windowing_sorting_muting``).
+Windowing and muting programs: SUMUTE, SUWIND and SUKILL (``su/main/windowing_sorting_muting``), and SUVLENGTH
+(``su/main/operations``).
 
 SU picks traces and positions on traces by header words (``key=offset``). Here the key is the name of one of the
 values in ``trace.header`` (see `seispy.container.Trace`), or a function of a trace that gives the number. SU's default
@@ -17,7 +18,7 @@ import numpy as np
 from ..container import as_trace_iterator, from_iterable
 from ..stage import Stage, header_value as _key_value, per_trace
 
-__all__ = ['mute', 'wind', 'kill']
+__all__ = ['mute', 'wind', 'kill', 'vlength']
 
 _abs, _min, _max = abs, min, max
 
@@ -326,3 +327,42 @@ def kill(key=None, a=None, *, min=None, count=1):
     if count < 1:
         raise ValueError("count must be at least 1")
     return Stage(_kill, key, a, parallelism='serial' if min is not None else 'trace', name='kill', min=min, count=count)
+
+
+# ------------------------------------------------------------------------------------------------------- vlength
+def _vlength(upstream, *, ns=None):
+    source = as_trace_iterator(upstream)
+
+    def traces():
+        length = ns
+        for trace in source:
+            if length is None:
+                length = trace.n_sample  # (the length of the first trace)
+            n = trace.n_sample
+            if n == length:
+                yield trace
+                continue
+            x = np.asarray(trace)
+            if n > length:
+                out = x[:length]
+            else:
+                out = np.zeros(length, dtype=x.dtype)
+                out[:n] = x
+            yield trace.replace(out)
+
+    return from_iterable(traces(), n_traces=source.n_traces)
+
+
+def vlength(ns=None):
+    """Make traces of different lengths the same length (SUVLENGTH): longer ones are cut, shorter ones are padded with
+    zeros at the end.
+
+    Parameters
+    ----------
+    ns : int, optional
+        The number of samples of the output, by default the number of samples of the first trace. (Without it the
+        length depends on the first trace of the stream, so such a stage can not be split across workers.)
+    """
+    if ns is not None and ns < 1:
+        raise ValueError(f"ns={ns} must be at least 1")
+    return Stage(_vlength, parallelism='serial' if ns is None else 'trace', name='vlength', ns=ns)

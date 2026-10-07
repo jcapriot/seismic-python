@@ -62,3 +62,15 @@ def test_synlv_runs():
     data = np.array([np.asarray(t) for t in coll])
     assert np.isfinite(data).all()
     assert np.abs(data).max() > 0
+
+
+def test_synthetics_fill_in_the_header():
+    from seispy.synthetics import plane, spike, synlv
+
+    for make in (spike(nt=16, ntr=3), plane(nt=16, ntr=3), synlv(nt=16, nxo=3, nxm=0, nxs=2)):
+        trs = list(make)
+        assert all(t.header['coord_unit'] == 1 and t.header['trace_type'] == 1 for t in trs)
+        assert all(t.header['ensemble_number'] >= 1 and t.header['ensemble_trace_number'] >= 1 for t in trs)
+    # one gather, numbered from 1
+    assert [t.header['ensemble_trace_number'] for t in spike(nt=16, ntr=3)] == [1, 2, 3]
+    assert {t.header['ensemble_number'] for t in plane(nt=16, ntr=3)} == {1}

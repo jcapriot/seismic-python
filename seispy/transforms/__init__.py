@@ -1,5 +1,7 @@
 """
-Transforms: SUHILB, SUZEROPHASE, SUANALYTIC, SUFFT, SUIFFT and SUAMP (``su/main/transforms``).
+Transforms: SUHILB, SUZEROPHASE, SUANALYTIC, SUFFT, SUIFFT and SUAMP (``su/main/transforms``), and (in
+``_cepstral.py``) SUCLOGFFT, SUICLOGFFT, SUCEPSTRUM, SUICEPSTRUM and SUWFFT, and the time-frequency panels (in
+``_timefreq.py``) SUST, SUGABOR and SUCWT.
 
 The stages that make complex traces (``analytic``, ``fft``), or take them apart (``ifft``, ``real``, ``imag``, ``amp``,
 ``logamp``, ``phase``), use traces with complex samples (see ``Trace.dtype``), where the SU programs have traces of
@@ -15,7 +17,10 @@ import numpy as np
 from ..stage import per_trace, stage
 from . import _hilbert
 
-__all__ = ['hilb', 'zerophase', 'analytic', 'fft', 'ifft', 'real', 'imag', 'amp', 'logamp', 'phase']
+__all__ = [
+    'hilb', 'zerophase', 'analytic', 'fft', 'ifft', 'real', 'imag', 'amp', 'logamp', 'phase',
+    'clogfft', 'iclogfft', 'cepstrum', 'icepstrum', 'wfft', 'st', 'gabor', 'cwt',
+]
 
 
 # ---------------------------------------------------------------------------------------------------------- hilb
@@ -194,3 +199,8 @@ phase = stage(_complex_to_real('phase', lambda z: np.arctan2(z.imag, z.real)), p
 # amp : the amplitude (modulus), logamp : its natural log, phase : the phase in (-pi, pi]
 # jack : (for amp and logamp) divide the value at zero frequency by 2, which is right for the transform of a causal
 #        function.
+
+
+# (these need _UNIT and _FOURIER, from above)
+from ._cepstral import clogfft, iclogfft, cepstrum, icepstrum, wfft  # noqa: E402
+from ._timefreq import st, gabor, cwt  # noqa: E402
