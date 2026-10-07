@@ -187,7 +187,7 @@ cdef class _gain(spyc.BaseTraceIterator):
             return self._next_panel()
 
         cdef spyc.Trace trace = self.iter_in.next_trace()
-        if trace.hdr.data_type == spyc.SPY_COMPLEX64:
+        if trace.hdr.data_type == spyc.SPY_DTYPE_COMPLEX64:
             return self._next_complex(trace)
         return self._gain_trace(trace)
 

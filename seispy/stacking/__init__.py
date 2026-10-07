@@ -147,9 +147,9 @@ def _pws(upstream, *, key='ensemble_number', pwr=1.0, sl=0.0, ps=False, dt=None)
 
     def traces():
         for group in group_by(source, key):
-            arrays = [a.astype(F32) for a in _samples(group)]
             if any(t.dtype.kind == 'c' for t in group):
                 raise TypeError("This stage works on real traces, but was given a complex one.")
+            arrays = [a.astype(F32) for a in _samples(group)]
             n = arrays[0].shape[0]
             sample_dt = group[0].d_sample or dt or 0.004
             isl = _nint(abs(sl) / sample_dt)

@@ -52,7 +52,8 @@ if cy.version().version_compare('>=3.1.0')
   cython_args += ['-Xfreethreading_compatible=True']
 endif
 
-su_proj = subproject('su')
+# (the warnings of the SU sources, which are upstream's, are not shown)
+su_proj = subproject('su', default_options: ['warning_level=0'])
 su_dep = su_proj.get_variable('su_dep')
 
 subdir('seispy')

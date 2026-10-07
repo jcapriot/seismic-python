@@ -3,9 +3,12 @@
 SUCENTSAMP: a spike for each lobe of a trace, with the area of the lobe, at its centroid (``su_centsamp``).
 """
 from .. cimport su
+cimport cython
 import numpy as np
 
 
+@cython.boundscheck(False)  # (time has nt samples, and i is from 0 to nt - 1)
+@cython.wraparound(False)
 def centsamp(float[::1] x, float dt, int nvals_min):
     """The centroid samples of the trace x, which has dt between its samples"""
     cdef int nt = x.shape[0]

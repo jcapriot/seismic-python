@@ -4,6 +4,7 @@ The random number generators of the SU library (``franuni`` and ``frannor`` of `
 that every stage has its own, which make the numbers that SU makes for the same seed (``su_rng`` of ``suaddnoise.c``).
 """
 from .. cimport su
+cimport cython
 import numpy as np
 
 
@@ -17,6 +18,8 @@ cdef class Uniform:
     def next(self):
         return su.su_rng_uniform(&self.rng)
 
+    @cython.boundscheck(False)  # (out has n samples, and i is from 0 to n - 1)
+    @cython.wraparound(False)
     def draw(self, size_t n):
         cdef float[::1] out = np.zeros(n, dtype=np.float32)
         cdef size_t i
@@ -35,6 +38,8 @@ cdef class Normal:
     def next(self):
         return su.su_rng_normal(&self.rng)
 
+    @cython.boundscheck(False)  # (out has n samples, and i is from 0 to n - 1)
+    @cython.wraparound(False)
     def draw(self, size_t n):
         cdef float[::1] out = np.zeros(n, dtype=np.float32)
         cdef size_t i

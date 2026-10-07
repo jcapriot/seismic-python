@@ -3,6 +3,7 @@
 
 from .. cimport container as spyc
 import numpy as np
+cimport cython
 from libc.math cimport fabs
 
 cdef class plane(spyc.BaseTraceIterator):
@@ -67,6 +68,8 @@ cdef class plane(spyc.BaseTraceIterator):
         self.hdr.uniform_traces = True
         self.n_planes = self.dips.shape[0]
 
+    @cython.boundscheck(False)  # (the plane arrays have n_planes values, and data has nt samples: the samples that are
+    @cython.wraparound(False)   # written are fit and fit + 1, where 0 <= fit < nt - 1)
     cdef spyc.Trace next_trace(self):
         if self.i == self.hdr.n_traces:
             raise StopIteration()

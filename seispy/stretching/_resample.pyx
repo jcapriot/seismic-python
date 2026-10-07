@@ -3,6 +3,7 @@
 Sinc resampling of a trace, with the 8 point sinc interpolation of the SU library (``ints8r``), as SURESAMP does.
 """
 from .. cimport su
+cimport cython
 import numpy as np
 
 
@@ -19,6 +20,8 @@ cdef void _fill_the_table() noexcept:
 _fill_the_table()
 
 
+@cython.boundscheck(False)  # (t has nt samples, and i is from 0 to nt - 1)
+@cython.wraparound(False)
 def resample(float[::1] x, float dt_in, float tmin_in, int nt, float dt, float tmin):
     """The samples of x, which are dt_in apart and start at tmin_in, at nt times that are dt apart and start at tmin
 
