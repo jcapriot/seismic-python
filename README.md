@@ -13,7 +13,7 @@ pip install .
 ### Requirements:
 At the moment, the external package requirements are quite light:
 
-* `numpy>=1.22.4` To handle some numerical IO
+* `numpy>=1.26.0` To handle some numerical IO
 * `matplotlib`
 
 ### In place builds:
