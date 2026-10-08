@@ -2,6 +2,7 @@ module_path = 'seispy/attributes'
 
 python_sources = [
     '__init__.py',
+    '_stats.py',
 ]
 
 py.extension_module(

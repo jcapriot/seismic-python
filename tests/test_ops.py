@@ -285,8 +285,9 @@ def test_cnorm():
 
 
 def test_each_operation_is_its_own_stage():
-    # (the panel operations, `mix` and the binary ones, are in _panels.py and take a second data set)
-    panels = {'mix', 'sum2', 'diff2', 'prod2', 'quo2', 'ptsum', 'ptdiff', 'ptprod', 'ptquo', 'zipper', 'zippol'}
+    # (the panel operations, `mix` and the binary ones, are in _panels.py and take a second data set, and the operations on
+    # a whole data set are in _dataset.py)
+    panels = {'mix', 'sum2', 'diff2', 'prod2', 'quo2', 'ptsum', 'ptdiff', 'ptprod', 'ptquo', 'zipper', 'zippol', 'flip', 'vcat'}
     assert panels <= set(op.__all__)
     names = [name for name in op.__all__ if name not in panels]
     assert len(names) == len(set(names)) == 44

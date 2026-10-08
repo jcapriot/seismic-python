@@ -339,6 +339,9 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.windowing.sort`, `mixgathers` | `susort`, `sumixgathers` | sort by header values (in memory), fill the gaps of a gather from another |
 | `seispy.operations.mix`, `sum2`, `diff2`, `prod2`, `quo2`, `ptsum`, `ptdiff`, `ptprod`, `ptquo`, `zipper`, `zippol` | `sumix`, `suop2` | moving average over traces, arithmetic on two data sets (or a data set and a trace), complex traces from two real ones |
 | `seispy.filters.median`, `medmix` | `sumedian` | median or mix about a moveout curve, to suppress events that have that moveout |
+| `seispy.tapering.gausstaper` | `sugausstaper` | multiply traces by a gaussian of a header value (the offset) |
+| `seispy.operations.flip`, `vcat` | `suflip`, `suvcat` | turn a data set over (rotate, transpose, reverse), append a second data set to the ends of the traces with an overlap |
+| `seispy.attributes.mean`, `max`, `quantile`, `histogram`, `cmp` | `sumean`, `sumax`, `suquantile`, `suhistogram`, `sucmp` | report on a data set (and return the results, rather than make traces): L-p means, maxima/minima/rms/threshold peaks, quantiles and ranks, histograms, comparison of two data sets |
 
 ```python
 from seispy.synthetics import synlv
@@ -368,6 +371,7 @@ differ from the programs, because the program is plainly wrong, are listed at th
 * **Plain numpy, where the program is only arithmetic:** the operations of `suop` (all but `saf`, `freq` and `despike`),
   `zero`, `nan`, `normalize`, `weight`, `divcor`, `impedance`, `ai2r`, `r2ai`, `wind`, `kill`, `vlength`, `sort`,
   `mixgathers`, `suop2` (the binary operations), `shift`, `reduce`, `real`, `imag`, `amp`, `fft` and `ifft`,
+  `gausstaper`, `flip`, `vcat`, the reports of `seispy.attributes` (`mean`, `max`, `quantile`, `histogram`, `cmp`),
   and the source `null`. (`mix` uses the SU weighted sum.)
 
 The stages do not

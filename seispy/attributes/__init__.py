@@ -9,6 +9,9 @@ of its own: ``amp`` (the envelope), ``phase``, ``freq``, ``normamp``, ``fdenv``,
 They are made from the complex trace ``trace + i hilbert(trace)``, with the Hilbert transform of the SU library
 (``seispy.transforms.hilb``), by the functions of the SU library in ``_attributes.pyx``. The modes ``uphase``, ``freqw`` and ``thin`` are not here.
 
+The programs that report on a data set instead of making traces (``mean``, ``max``, ``quantile``, ``histogram`` and ``cmp``, of
+SUMEAN, SUMAX, SUQUANTILE, SUHISTOGRAM and SUCMP) are functions that return their results, in ``_stats.py``.
+
 Where the program plainly does not do what its documentation says this does what the documentation says: ``bandwidth``
 and ``q`` run over 2 nt - 1 samples of a trace of nt (``ntout``), here it is nt.
 """
@@ -131,3 +134,6 @@ q = _define(
     'q', _q, "The instantaneous Q factor, -pi f(t) envelope / (d envelope / dt) (Barnes 1992)." + _UNWRAP + "    Default 1.",
     unwrap=1,
 )
+
+# (not in __all__: `from seispy.attributes import *` would replace the builtin max, and these are not stages)
+from ._stats import mean, max, quantile, histogram, cmp  # noqa: E402,F401

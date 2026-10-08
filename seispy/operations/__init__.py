@@ -136,6 +136,7 @@ despike = _define(
 )
 
 from ._panels import mix, sum2, diff2, prod2, quo2, ptsum, ptdiff, ptprod, ptquo, zipper, zippol  # noqa: E402
+from ._dataset import flip, vcat  # noqa: E402
 
 __all__ = [
     'abs', 'ssqrt', 'sqr', 'ssqr', 'sgn', 'exp', 'sexp', 'slog', 'slog2', 'slog10', 'db', 'cos', 'sin', 'tan', 'cosh',
@@ -144,4 +145,5 @@ __all__ = [
     'refl', 'diff', 'drv2', 'drv4', 'spike', 'lnza', 'saf', 'freq',
     'mean', 'std', 'var', 'despike',
     'mix', 'sum2', 'diff2', 'prod2', 'quo2', 'ptsum', 'ptdiff', 'ptprod', 'ptquo', 'zipper', 'zippol',
+    'flip', 'vcat',
 ]

@@ -4,6 +4,7 @@ python_sources = [
     '__init__.py',
     '_numpy_ops.py',
     '_panels.py',
+    '_dataset.py',
 ]
 
 cython_sources = [
