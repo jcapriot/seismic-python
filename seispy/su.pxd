@@ -278,9 +278,9 @@ cdef extern from "cwp.h" nogil:
                              float *phase)
 
     # (no longer used, we use numpy's FFT) Prime Factor FFTs
-    # int npfa(int nmin)
+    int npfa(int nmin)
     # int npfao(int nmin, int nmax)
-    # int npfar(int nmin)
+    int npfar(int nmin)
     # int npfaro(int nmin, int nmax)
     # void pfacc(int isign, int n, complex z[])
     # void pfarc(int isign, int n, float rz[], complex cz[])
@@ -871,6 +871,11 @@ cdef extern from "su.h" nogil:
     void su_median_across(int n, int nwin, const float *rows, size_t stride, float *out, float *scratch)
     void su_mix_across(int n, int nwin, const float *rows, size_t stride, const float *w, float *out)
     void su_addsinc_table()
+    float su_dipdivcor_scale()
+    void su_dipdivcor_table(int nt, int np, float dt, const float *tt, const float *vt, float *vs, float vind[][4],
+        float *divcor, int trans, int norm)
+    void su_dipdivcor_filter(float k, float dpx, float dt, int np, int nw, int nt, const float *div,
+        const complex *p, complex *q, complex *kq, complex *qq)
     void su_gain_tpow_table(float *tpowfac, int nt, float tmin, float dt, float tpow, float tred)
     void su_gain_epow_table(float *epowfac, int nt, float tmin, float dt, float epow, float etpow)
     void su_gain(float *data, float tpow, float epow, float gpow,
@@ -888,6 +893,10 @@ cdef extern from "su.h" nogil:
         int invert, int sscale, float *ttn, float *atn, float *tnt, float *at, int *itmute_out)
     void su_nmo(float *data, int nt, float dt, float ft, int itmute, int lmute, int sscale, int invert,
         const float *ttn, const float *atn, const float *tnt, const float *at, float *q)
+    void su_taupnmo_tables(int nt, float dt, float ft, float p, const float *vvt, float smute, float *ttn, float *atn,
+            int *itmute_out)
+    void su_taupnmo(float *data, int nt, float dt, float ft, int itmute, int lmute, int sscale,
+            const float *ttn, const float *atn, float *q)
 
     # operations
     void su_op_saf(float *data, int nt, float *tmp)
@@ -901,3 +910,17 @@ cdef extern from "su.h" nogil:
                   float v00, float dvdx, float dvdz,
                   int ls, int er, int ob, Wavelet *w, int nr, Reflector *r, int lhd, int nhd, float *hd
               );
+
+
+cdef extern from "taup.h" nogil:
+    # slant stacks (tau-p transforms), from par/lib/taup.c
+    void su_taup_tables()
+    void fwd_FK_sstack(float dt, int nt, int nx, float xmin, float dx, int np,
+                       float pmin, float dp, float fmin, float **traces, float **out_traces)
+    void fwd_tx_sstack(float dt, int nt, int nx, float xmin, float dx, int np,
+                       float pmin, float dp, float **traces, float **out_traces)
+    void inv_FK_sstack(float dt, int nt, int nx, float xmin, float dx, int np,
+                       float pmin, float dp, float fmin, float **traces, float **out_traces)
+    void inv_tx_sstack(float dt, int nt, int nx, int npoints, float xmin,
+                       float dx, int np, float pmin, float dp, float **traces,
+                       float **out_traces)

@@ -3,6 +3,7 @@ module_path = 'seispy/filters'
 python_sources = [
     '__init__.py',
     '_fftfilter.py',
+    '_dipfilt.py',
     '_moveout.py',
     '_phasefilters.py',
     '_spectral.py',

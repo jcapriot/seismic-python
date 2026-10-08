@@ -4,9 +4,11 @@ python_sources = [
     '__init__.py',
     '_cepstral.py',
     '_timefreq.py',
+    '_spectra.py',
+    '_slant.py',
 ]
 
-foreach name : ['_hilbert', '_unwrap', '_kernels']
+foreach name : ['_hilbert', '_unwrap', '_kernels', '_taup']
     py.extension_module(
         name,
         name + '.pyx',

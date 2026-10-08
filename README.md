@@ -339,6 +339,11 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.windowing.sort`, `mixgathers` | `susort`, `sumixgathers` | sort by header values (in memory), fill the gaps of a gather from another |
 | `seispy.operations.mix`, `sum2`, `diff2`, `prod2`, `quo2`, `ptsum`, `ptdiff`, `ptprod`, `ptquo`, `zipper`, `zippol` | `sumix`, `suop2` | moving average over traces, arithmetic on two data sets (or a data set and a trace), complex traces from two real ones |
 | `seispy.filters.median`, `medmix` | `sumedian` | median or mix about a moveout curve, to suppress events that have that moveout |
+| `seispy.stretching.taupnmo` | `sutaupnmo` | NMO of tau-p traces, for a velocity function of tau and CDP, with the ray parameter from a header value or a function |
+| `seispy.amplitudes.dipdivcor` | `sudipdivcor` | dip-dependent divergence correction in the wavenumber domain, for the traces of the stream as one panel |
+| `seispy.transforms.specfx`, `specfk`, `speck1k2` | `suspecfx`, `suspecfk`, `suspeck1k2` | amplitude spectra: of each trace, f-k of a panel, and 2D (k1, k2) of a panel (numpy's FFT; the axis across the traces is described in the docstring) |
+| `seispy.filters.dipfilt` | `sudipfilt` | dip (slope) filter in the f-k domain, with a bias slope that is made horizontal first (numpy's FFT) |
+| `seispy.transforms.taup` | `sutaup` | forward and inverse slant stacks (tau-p transforms) of a panel, in the t-x and F-K domains (`option` 1 to 4) |
 | `seispy.tapering.gausstaper` | `sugausstaper` | multiply traces by a gaussian of a header value (the offset) |
 | `seispy.operations.flip`, `vcat` | `suflip`, `suvcat` | turn a data set over (rotate, transpose, reverse), append a second data set to the ends of the traces with an overlap |
 | `seispy.attributes.mean`, `max`, `quantile`, `histogram`, `cmp` | `sumean`, `sumax`, `suquantile`, `suhistogram`, `sucmp` | report on a data set (and return the results, rather than make traces): L-p means, maxima/minima/rms/threshold peaks, quantiles and ranks, histograms, comparison of two data sets |
@@ -359,12 +364,12 @@ arrays that the programs keep in `static` variables, filled in by the first trac
 is what lets the stages run in parallel (`tests/test_threads_c.py` checks that). The few places where the library versions
 differ from the programs, because the program is plainly wrong, are listed at the top of each source file.
 
-* **The program is the SU code:** `gain`, `bfilt`, `nmo`, `resamp`, `hilb`, `analytic`, `synlv`, `centsamp`, `mute` (every mode),
+* **The program is the SU code:** `gain`, `bfilt`, `nmo`, `taupnmo`, `taup`, `resamp`, `hilb`, `analytic`, `synlv`, `centsamp`, `mute` (every mode),
   `taper`, `ramp`, the wavelets (`seispy.waveforms`) and the sweeps, `log`, `ilog`, `ttoz`, `ztot` and `tsq`, the attributes
   (`seispy.attributes`), `conv`, `acor`, `xcor` and `refcon` (the SU convolution and correlation), `pgc`, the stacks
   (`stack`, `divstack`, `pws`, `stackup`), and `median` and `medmix`. The random numbers of `addnoise`, `addflatnoise`, `jitter`
   and `randspike` are those of SU's generators, so for the same `seed` they make the numbers that the programs make.
-* **numpy's FFT, with the SU code between the transforms:** `frac`, `phase`, `minphase`, `tvband`, `wfft`, `acorfrac`,
+* **numpy's FFT, with the SU code between the transforms:** `dipdivcor` (the transform in x), `specfx`, `specfk`, `speck1k2`, `dipfilt`, `frac`, `phase`, `minphase`, `tvband`, `wfft`, `acorfrac`,
   `clogfft`, `iclogfft`, `cepstrum`, `icepstrum` (phase unwrapping is SU's too), `st`, `gabor` and `cwt`. The SU programs
   pad every trace for their prime-factor FFT, which is not carried over. `filter` designs its filter with `polygonalFilter` of the
   SU sources, and filters with numpy's FFT.

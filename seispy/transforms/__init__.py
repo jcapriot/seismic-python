@@ -20,6 +20,7 @@ from . import _hilbert
 __all__ = [
     'hilb', 'zerophase', 'analytic', 'fft', 'ifft', 'real', 'imag', 'amp', 'logamp', 'phase',
     'clogfft', 'iclogfft', 'cepstrum', 'icepstrum', 'wfft', 'st', 'gabor', 'cwt',
+    'specfx', 'specfk', 'speck1k2', 'taup',
 ]
 
 
@@ -204,3 +205,5 @@ phase = stage(_complex_to_real('phase', lambda z: np.arctan2(z.imag, z.real)), p
 # (these need _UNIT and _FOURIER, from above)
 from ._cepstral import clogfft, iclogfft, cepstrum, icepstrum, wfft  # noqa: E402
 from ._timefreq import st, gabor, cwt  # noqa: E402
+from ._spectra import specfx, specfk, speck1k2  # noqa: E402
+from ._slant import taup  # noqa: E402
