@@ -261,6 +261,16 @@ What can be shared by threads is the stages (the specifications that are chained
 by the stages. What can not is an iterator in the middle of a pipeline: take its traces from one thread at a time (which is
 what `prefetch` and `pmap` do). `tests/test_free_threading.py` has the threads that use the same stages and traces at once.
 
+### Stable ABI (abi3) wheels
+The modules are built against the limited C API of python 3.12, so one `cp312-abi3` wheel per platform works for every
+GIL-enabled CPython from 3.12 on. The free threaded builds have no stable ABI (python 3.14t has none, and Cython can not yet
+generate code for the one of 3.15t), so they get their own wheels (`cp314t`, `cp315t`) that are built without it. To build in
+place with a free threaded python, turn the limited API off:
+
+```
+pip install --no-build-isolation --editable . --config-settings=setup-args="-Dpython.allow_limited_api=false"
+```
+
 ## Pipes and parallelism
 Processing steps can be written as input-less *stages* and chained with `|`, just like the shell:
 

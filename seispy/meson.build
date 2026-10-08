@@ -35,6 +35,7 @@ py.extension_module(
     cython_args: cython_args,
     c_args: cython_c_args,
     install: true,
+    limited_api: limited_api,
     subdir: module_path,
     dependencies : [py_dep, su_dep],
     include_directories: spy_include,

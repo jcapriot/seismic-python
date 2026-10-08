@@ -1,7 +1,7 @@
 [build-system]
 build-backend = 'mesonpy'
 requires = [
-    "meson-python>=0.15.0",
+    "meson-python>=0.21.0",
     "Cython>=3.1.0",
 
     # numpy requirement for wheel builds for distribution on PyPI - building
@@ -63,6 +63,12 @@ file = 'LICENSE.md'
 Homepage = 'http://github.com/jcapriot/seismic-python'
 Repository = 'http://github.com/jcapriot/seismic-python.git'
 
+[tool.meson-python]
+# Build one abi3 wheel per platform (targeting the 3.12 limited API, see meson.build) instead of one per Python version.
+# Free-threaded builds opt out with `-Dpython.allow_limited_api=false`: 3.14t has no stable ABI at all, and Cython can not
+# yet generate code for the one of 3.15t (abi3t). Revisit once Cython can.
+limited-api = true
+
 [tool.meson-python.args]
 setup = ['--default-library=static']
 
@@ -73,7 +79,7 @@ test = [
 # what is needed to build the package without build isolation, and to test it: `uv pip install --group dev`
 dev = [
     {include-group = "test"},
-    "meson-python>=0.15.0",
+    "meson-python>=0.21.0",
     "meson",
     "ninja",
     "Cython>=3.1.0",
@@ -81,12 +87,15 @@ dev = [
 ]
 
 [tool.cibuildwheel]
-# The Python versions that are built follow `requires-python` above, and PyPy is not enabled (see the `enable` option), so
-# there is nothing to skip for those. The free threaded builds (cp314t, ...) are built and tested with the others. Skip 32 bit
-# windows.
+# cp312-* is the abi3 wheel that covers every GIL-enabled CPython >= 3.12 (and is tested here on 3.12 only: the
+# workflow tests the wheel with the newer ones). The free-threaded builds are ordinary per-version wheels (see the
+# override below). Skip 32 bit windows.
+build = ["cp312-*", "cp314t-*", "cp315t-*"]
 skip = ["*-win32"]
 build-frontend = "build[uv]"
 build-verbosity = 1
+# use the visual studio compilers on windows (a no-op elsewhere)
+config-settings = { setup-args = ["--vsenv"] }
 
 # Test every wheel that is built with the whole test suite. The tests are run from a temporary directory outside of the source
 # tree, so that the package that is imported is the wheel. (The tests of the examples run the examples.)
@@ -94,9 +103,8 @@ test-requires = ["pytest"]
 test-sources = ["tests", "examples"]
 test-command = "pytest tests"
 
-
-# use the visual studio compilers
-[tool.cibuildwheel.windows.config-settings]
-setup-args = [
-    '--vsenv'
-]
+[[tool.cibuildwheel.overrides]]
+# Free-threaded builds use the regular (non-limited) API, see [tool.meson-python]. The base setup-args are repeated here
+# because an override replaces the whole key rather than adding to it.
+select = ["cp314t-*", "cp315t-*"]
+config-settings = { setup-args = ["--vsenv", "-Dpython.allow_limited_api=false"] }

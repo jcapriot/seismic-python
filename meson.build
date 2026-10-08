@@ -47,6 +47,11 @@ if get_option('line_tracing')
   cython_c_args += ['-DCYTHON_TRACE_NOGIL=1']
 endif
 
+# Target the 3.12 limited API, so that one abi3 wheel covers every GIL-enabled CPython >= 3.12 (see [tool.meson-python] in
+# pyproject.toml). Meson only uses this while `python.allow_limited_api` is true: `-Dpython.allow_limited_api=false` turns it
+# off, which free-threaded builds need (3.14t has no stable ABI, and Cython can not yet target the one of 3.15t).
+limited_api = '3.12'
+
 cython_args = []
 if cy.version().version_compare('>=3.1.0')
   cython_args += ['-Xfreethreading_compatible=True']

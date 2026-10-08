@@ -18,6 +18,7 @@ foreach cy_source : cython_sources
         cython_args: cython_args,
         c_args: cython_c_args,
         install: true,
+        limited_api: limited_api,
         subdir: module_path,
         dependencies : [py_dep, su_dep],
     )

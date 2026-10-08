@@ -11,6 +11,7 @@ foreach cy_source : ['_resample.pyx', '_nmo.pyx', '_stretch.pyx']
         cython_args: cython_args,
         c_args: cython_c_args,
         install: true,
+        limited_api: limited_api,
         subdir: module_path,
         dependencies : [py_dep, su_dep],
     )
