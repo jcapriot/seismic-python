@@ -898,6 +898,14 @@ cdef extern from "su.h" nogil:
     void su_taupnmo(float *data, int nt, float dt, float ft, int itmute, int lmute, int sscale,
             const float *ttn, const float *atn, float *q)
 
+    # velocity analysis
+    int su_velan_accumulate(int nt, float dt, float ft, float offset, int nv, float dv, float fv, float anis1,
+            float anis2, float smute, const float *data, float *num, float *den, float *nnz)
+    void su_velan_semblance(int nt, int ntout, int dtratio, int nsmooth, float pwr, const float *num, const float *den,
+            const float *nnz, float *sem)
+    void su_relan_accumulate(int nz, float dz, float fz, float offset, int nr, float dr, float fr, float smute,
+            const float *data, float *num, float *den, float *nnz)
+
     # operations
     void su_op_saf(float *data, int nt, float *tmp)
     void su_op_freq(float *data, int nt, float dt, float *tmp, float *tmp1)
