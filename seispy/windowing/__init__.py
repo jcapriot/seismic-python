@@ -16,10 +16,13 @@ import math
 import numpy as np
 
 from ..container import as_trace_iterator, from_iterable
+from .. import spool
 from ..stage import Stage, header_value as _key_value, per_trace
 from . import _mutec
 
-__all__ = ['mute', 'wind', 'kill', 'vlength', 'sort', 'mixgathers']
+__all__ = ['mute', 'wind', 'kill', 'vlength', 'sort', 'mixgathers', 'split', 'cleave', 'putgthr', 'getgthr', 'sorty']
+
+from ._splitting import split, cleave, putgthr, getgthr, sorty  # noqa: E402
 
 _abs, _min, _max = abs, min, max
 
@@ -355,31 +358,44 @@ def _sort_key(key):
     return name.lstrip('+-'), name.startswith('-')
 
 
-def _sort(upstream, *keys):
+def _sort(upstream, *keys, tmpdir=None, memory=None):
     keys = [_sort_key(k) for k in (keys or ('ensemble_number',))]
     source = as_trace_iterator(upstream)
 
-    def traces():
-        panel = list(source)
-        # one stable sort for each key, from the last: the first key is the main one
-        for key, descending in reversed(keys):
-            panel.sort(key=lambda trace: _key_value(trace, key), reverse=descending)
-        yield from panel
+    def sort_key(trace):
+        # (a key that is sorted from the largest is wrapped, so that the keys can be compared together)
+        values = (_key_value(trace, key) for key, _ in keys)
+        return tuple(spool.Descending(v) if descending else v for v, (_, descending) in zip(values, keys))
 
-    return from_iterable(traces(), n_traces=source.n_traces)
+    return from_iterable(
+        spool.external_sort(source, sort_key, stage='sort', tmpdir=tmpdir, memory=memory), n_traces=source.n_traces
+    )
 
 
-def sort(*keys):
+def sort(*keys, tmpdir=None, memory=None):
     """Sort traces by header values (SUSORT): ``sort('ensemble_number', 'offset')`` for the gathers, and within each by
     offset. A ``-`` in front of a name (``'-offset'``) sorts that one from the largest. A key can also be a function of a
     trace, or a pair ``(function, descending)``. The default is ``'ensemble_number'`` (SU's cdp).
 
-    All of the traces are read before the first is output, so use it on what fits in memory. Traces with the same values
-    stay in the order that they came in.
+    All of the traces are read before the first is output. They are kept in memory while they fit in a budget of ``memory``
+    bytes (see `seispy.spool`), and past that they are sorted in chunks that are put on disk and merged, so that data bigger
+    than memory can be sorted. Traces with the same values stay in the order that they came in.
+
+    Parameters
+    ----------
+    tmpdir : path, True or False, optional
+        Where the chunks go, if there are any: a directory, or ``True`` for the default one (``seispy.spool.tmpdir``,
+        ``SEISPY_TMPDIR``, ``CWP_TMPDIR``, or the system's). ``False`` never uses the disk. When the disk is used a
+        warning (to the logger ``seispy.spool``) says which directory, and the directory is removed afterwards.
+    memory : int, optional
+        The number of bytes of traces to keep in memory before using the disk (default 1 GiB, or ``SEISPY_MEMORY``); 0 puts
+        everything on disk, as SUSORT does.
     """
     for key in keys:
         _sort_key(key)
-    return Stage(_sort, *keys, parallelism='serial', name='sort')
+    spool.check_tmpdir(tmpdir)
+    spool.resolve_memory(memory)
+    return Stage(_sort, *keys, tmpdir=tmpdir, memory=memory, parallelism='serial', name='sort')
 
 
 # ------------------------------------------------------------------------------------------------------ mixgathers

@@ -8,6 +8,7 @@ import warnings
 
 import numpy as np
 
+from .. import spool
 from ..container import as_trace_iterator, from_iterable
 from ..stage import Stage
 
@@ -30,27 +31,26 @@ def _flipped(data, how):
     return data[:, ::-1]  # 3, top to bottom: the order of the samples
 
 
-def _flip(upstream, *, flip=1):
+def _flip(upstream, *, flip=1, tmpdir=None, memory=None):
     if flip not in _FLIPS:
         raise ValueError(f"flip = {flip!r}, it must be -1, 0, 1, 2, or 3")
     source = as_trace_iterator(upstream)
 
     def traces():
-        traces = list(source)
-        if not traces:
-            return
-        if len({t.n_sample for t in traces}) != 1:
-            raise ValueError("The traces must all have the same number of samples to flip them.")
-        flipped = np.ascontiguousarray(_flipped(np.stack([np.asarray(t) for t in traces]), flip))
-        for i, row in enumerate(flipped):
-            # (the headers are taken in order, not flipped with the data; a data set with more samples than traces
-            # that is turned over has more traces to make than headers to give them, which reuse the last)
-            yield traces[min(i, len(traces) - 1)].replace(row, trace_id=i + 1)
+        with spool.Panel(source, stage='flip', tmpdir=tmpdir, memory=memory) as panel:
+            if not len(panel):
+                return
+            flipped = _flipped(panel.array, flip)
+            for i in range(flipped.shape[0]):
+                # (the headers are taken in order, not flipped with the data; a data set with more samples than traces
+                # that is turned over has more traces to make than headers to give them, which reuse the last)
+                header = panel.header(min(i, len(panel) - 1))
+                yield header.replace(np.ascontiguousarray(flipped[i]), trace_id=i + 1)
 
     return from_iterable(traces())
 
 
-def flip(flip=1):
+def flip(flip=1, *, tmpdir=None, memory=None):
     """Flip a data set (a matrix of traces by samples) in various ways (SUFLIP).
 
     Parameters
@@ -59,11 +59,15 @@ def flip(flip=1):
         1: 90 degrees clockwise, -1: 90 degrees counter-clockwise, 0: transpose (the traces become the samples),
         2: flip right to left (reverse the order of the traces), 3: flip top to bottom (reverse every trace).
 
-    The whole data set is held in memory. The headers are those of the traces in order, with the trace number from 1 (the
-    sample interval is not changed by the turns, though it is meaningless there: set it again if you need it). The traces
-    must all have the same number of samples.
+    The whole data set is read before the first trace is output. It is kept in memory while it fits in a budget of ``memory``
+    bytes (see `seispy.spool`), and past that on disk (``tmpdir`` is the directory: a path, ``True`` for the default one, or
+    ``False`` to never use the disk), when a warning says which directory. The headers are those of the traces in order, with
+    the trace number from 1 (the sample interval is not changed by the turns, though it is meaningless there: set it again if
+    you need it). The traces must all have the same number of samples.
     """
-    kwargs = dict(flip=flip)
+    spool.check_tmpdir(tmpdir)
+    spool.resolve_memory(memory)
+    kwargs = dict(flip=flip, tmpdir=tmpdir, memory=memory)
     _flip((), **kwargs)  # check the parameters now
     return Stage(_flip, parallelism='serial', name='flip', **kwargs)
 

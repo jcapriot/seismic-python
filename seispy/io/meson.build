@@ -46,7 +46,7 @@ py.extension_module(
     include_directories: spy_include,
 )
 
-python_sources = ['__init__.py']
+python_sources = ['__init__.py', 'tracefile.py']
 
 py.install_sources(
   python_sources,

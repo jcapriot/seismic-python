@@ -2,6 +2,7 @@ module_path = 'seispy/windowing'
 
 python_sources = [
     '__init__.py',
+    '_splitting.py',
 ]
 
 py.extension_module(

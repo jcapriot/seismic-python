@@ -271,6 +271,25 @@ place with a free threaded python, turn the limited API off:
 pip install --no-build-isolation --editable . --config-settings=setup-args="-Dpython.allow_limited_api=false"
 ```
 
+## Temporary files
+`sort` and `flip` read all of their traces before they write the first. They keep them in memory while they fit in a budget
+(1 GiB), and past that they put them on disk: `sort` as chunks that it merges, so that data bigger than memory can be sorted,
+and `flip` as a file that is memory mapped. When they do, they say so, loudly: a warning (from the logger `seispy.spool`, which
+python prints to stderr unless logging is set up otherwise) names the stage and the temporary directory, and the directory is
+removed when the stage is done, whether it finished, failed or was stopped.
+
+```python
+source | sort('ensemble_number', 'offset')                         # memory, or the default directory if it must
+source | sort('ensemble_number', tmpdir='D:/scratch', memory=2**28)  # a directory, and a smaller budget
+source | sort('offset', memory=0)                                    # everything on disk, as susort does
+source | sort('offset', tmpdir=False)                                # never the disk
+```
+
+The directory is, from the first that is set: the `tmpdir` of the stage, `seispy.spool.tmpdir`, the environment variable
+`SEISPY_TMPDIR`, `CWP_TMPDIR` (the one the SU programs use), and the temporary directory of the system. The budget likewise:
+`memory`, `seispy.spool.memory`, `SEISPY_MEMORY` (bytes). The stages that transform a whole panel (`specfk`, `dipdivcor`,
+`taup`, ...) need the panel in memory to do it, so they have no `tmpdir`.
+
 ## Pipes and parallelism
 Processing steps can be written as input-less *stages* and chained with `|`, just like the shell:
 
@@ -336,7 +355,7 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.transforms.st`, `gabor`, `cwt` | `sust`, `sugabor`, `sucwt` | time-frequency panels: Stockwell transform, multifilter analysis, wavelet transform |
 | `seispy.windowing.vlength` | `suvlength` | make traces the same length |
 | `seispy.stacking.stack`, `divstack`, `pws`, `stackup` | `sustack`, `sudivstack`, `supws`, `sustackup` | stack the traces of each gather (a run of equal `key`): mean, diversity, phase-weighted; stacking to any key combination in any order |
-| `seispy.windowing.sort`, `mixgathers` | `susort`, `sumixgathers` | sort by header values (in memory), fill the gaps of a gather from another |
+| `seispy.windowing.sort`, `mixgathers` | `susort`, `sumixgathers` | sort by header values (on disk when it does not fit in memory), fill the gaps of a gather from another |
 | `seispy.operations.mix`, `sum2`, `diff2`, `prod2`, `quo2`, `ptsum`, `ptdiff`, `ptprod`, `ptquo`, `zipper`, `zippol` | `sumix`, `suop2` | moving average over traces, arithmetic on two data sets (or a data set and a trace), complex traces from two real ones |
 | `seispy.filters.median`, `medmix` | `sumedian` | median or mix about a moveout curve, to suppress events that have that moveout |
 | `seispy.stretching.taupnmo` | `sutaupnmo` | NMO of tau-p traces, for a velocity function of tau and CDP, with the ray parameter from a header value or a function |
@@ -345,6 +364,8 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.filters.dipfilt` | `sudipfilt` | dip (slope) filter in the f-k domain, with a bias slope that is made horizontal first (numpy's FFT) |
 | `seispy.transforms.taup` | `sutaup` | forward and inverse slant stacks (tau-p transforms) of a panel, in the t-x and F-K domains (`option` 1 to 4) |
 | `seispy.velocity.velan`, `relan` | `suvelan`, `surelan` | stacking velocity semblance of CDP gathers, residual moveout semblance of migrated gathers: one semblance trace per velocity (or r parameter) for each gather (`ensemble_trace_number` counts them) |
+| `seispy.windowing.split`, `cleave`, `putgthr` | `susplit`, `sucleave`, `suputgthr` | write the traces that go through them to files, by the value of a header word, by ranges of it, or a file for each gather (in seispy's own format, `.spy`) |
+| `seispy.windowing.getgthr`, `sorty` | `sugetgthr`, `susorty` | the traces of the files of a directory (a source), a small shot data set that shows the geometry in the data, to look at sorting |
 | `seispy.tapering.gausstaper` | `sugausstaper` | multiply traces by a gaussian of a header value (the offset) |
 | `seispy.operations.flip`, `vcat` | `suflip`, `suvcat` | turn a data set over (rotate, transpose, reverse), append a second data set to the ends of the traces with an overlap |
 | `seispy.attributes.mean`, `max`, `quantile`, `histogram`, `cmp` | `sumean`, `sumax`, `suquantile`, `suhistogram`, `sucmp` | report on a data set (and return the results, rather than make traces): L-p means, maxima/minima/rms/threshold peaks, quantiles and ranks, histograms, comparison of two data sets |

@@ -21,6 +21,7 @@ python_sources = [
     'plotting.py',
     'stage.py',
     'parallel.py',
+    'spool.py',
 ]
 
 module_path = 'seispy'
