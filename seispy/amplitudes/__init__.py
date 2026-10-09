@@ -1,9 +1,10 @@
 from ._gain import _gain
 from ._pertrace import zero, nan, normalize, weight, ai2r, r2ai, divcor, centsamp, impedance
 from ._scan import pgc
+from ._dipdiv import dipdivcor
 from ..stage import Stage
 
-__all__ = ['gain', 'zero', 'nan', 'normalize', 'weight', 'ai2r', 'r2ai', 'divcor', 'centsamp', 'pgc', 'impedance']
+__all__ = ['gain', 'zero', 'nan', 'normalize', 'weight', 'ai2r', 'r2ai', 'divcor', 'centsamp', 'pgc', 'impedance', 'dipdivcor']
 
 
 def gain(*, panel=False, **kwargs):

@@ -2,9 +2,13 @@
 #define _BSWAP_H
 
 #include <stddef.h> // size_t, _byteswap_ushort on windows
+#include <stdint.h> // uintptr_t
 #include <string.h> // memcpy
 
 #include "spy_config.h"
+
+// (`restrict` is C99, and not a keyword of C++; the compilers have this one)
+#define SPY_RESTRICT __restrict
 
 #ifdef _MSC_VER
 #define spy_bswap_u16(x) _byteswap_ushort(x) //relying on ushort being 16 bits on msvc compiler
@@ -19,7 +23,7 @@
 static inline spy_uint16
 spy_bswap_u16(spy_uint16 x)
 {
-    return ((x & 0x00ffu) << 8) | ((x 0xff00u) >> 8);
+    return ((x & 0x00ffu) << 8) | ((x & 0xff00u) >> 8);
 }
 #endif
 
@@ -152,7 +156,7 @@ spy_prw_lil_bswap8_unaligned(char * x)
 }
 
 static inline int
-spy_is_aligned(const void *restrict p, const uintptr_t alignment)
+spy_is_aligned(const void *SPY_RESTRICT p, const uintptr_t alignment)
 {
     /*
      * Assumes alignment is a power of two, as required by the C standard.

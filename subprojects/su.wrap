@@ -1,4 +1,4 @@
 [wrap-git]
 url = https://github.com/jcapriot/SeisUnix.git
-revision = 93e87f04f97878ff4495da0d9b4e3d73f9ae8fa1
+revision = HEAD
 depth = 1

@@ -4,15 +4,18 @@ python_sources = [
     '__init__.py',
     '_cepstral.py',
     '_timefreq.py',
+    '_spectra.py',
+    '_slant.py',
 ]
 
-foreach name : ['_hilbert', '_unwrap', '_kernels']
+foreach name : ['_hilbert', '_unwrap', '_kernels', '_taup']
     py.extension_module(
         name,
         name + '.pyx',
         cython_args: cython_args,
-        c_args: cython_c_args,
+        cpp_args: cython_c_args,
         install: true,
+        limited_api: limited_api,
         subdir: module_path,
         dependencies : [py_dep, su_dep],
     )

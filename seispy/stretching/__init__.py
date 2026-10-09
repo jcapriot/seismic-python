@@ -1,5 +1,5 @@
 """
-Programs that change the time axis of traces: SUSHIFT, SURESAMP, SUREDUCE, SUNMO, SULOG, SUILOG, SUTSQ, SUTTOZ and
+Programs that change the time axis of traces: SUSHIFT, SURESAMP, SUREDUCE, SUNMO, SUTAUPNMO, SULOG, SUILOG, SUTSQ, SUTTOZ and
 SUZTOT (``su/main/stretching_moveout_resamp``).
 
 Where a program plainly does not do what its documentation says (see the notes on each) this does what the
@@ -7,11 +7,11 @@ documentation says. Times are in seconds, including the ``dt`` of ``shift`` (whi
 """
 import numpy as np
 
-from ..stage import Stage, per_trace, stage
+from ..stage import Stage, header_value, per_trace, stage
 from ..container import as_trace_iterator, from_iterable
-from . import _nmo, _resample, _stretch
+from . import _nmo, _resample, _stretch, _taupnmo
 
-__all__ = ['shift', 'resamp', 'reduce', 'nmo', 'log', 'ilog', 'tsq', 'ttoz', 'ztot']
+__all__ = ['shift', 'resamp', 'reduce', 'nmo', 'taupnmo', 'log', 'ilog', 'tsq', 'ttoz', 'ztot']
 
 F32 = np.float32
 
@@ -203,24 +203,29 @@ def _velocity_functions(tnmo, vnmo, cdp):
     return np.asarray(cdps)[order], [functions[i] for i in order]
 
 
-def _nmo_trace_function(cdps, functions, smute, lmute, sscale, invert, upward):
-    sloth_of_time = {}  # (nt, dt, ft) -> the sloth for every cdp, (ncdp, nt)
-    last = [None, None]  # the key of the tables, and the tables
+class _CdpVelocities:
+    """A function of the velocity (1/v^2 for nmo, v^2 for taupnmo) at the sample times of a trace, for any cdp"""
 
-    def sloths(nt, dt, ft):
+    def __init__(self, cdps, functions, transform):
+        self.cdps = cdps
+        self.functions = functions
+        self.transform = transform
+        self.key = None
+        self.table = None
+
+    def _table(self, nt, dt, ft):
         key = (nt, dt, ft)
-        if key not in sloth_of_time:
+        if self.key != key:
             times = ft + np.arange(nt) * dt
-            table = np.empty((len(functions), nt), dtype=np.float32)
-            for i, (t, v) in enumerate(functions):
-                velocity = np.interp(times, t, v, left=v[0], right=v[-1])
-                table[i] = 1.0 / (velocity * velocity)
-            sloth_of_time.clear()
-            sloth_of_time[key] = table
-        return sloth_of_time[key]
+            table = np.empty((len(self.functions), nt), dtype=np.float32)
+            for i, (t, v) in enumerate(self.functions):
+                table[i] = self.transform(np.interp(times, t, v, left=v[0], right=v[-1]))
+            self.key, self.table = key, table
+        return self.table
 
-    def sloth_at(table, cdp):
-        # constant extrapolation outside the cdps, linear interpolation between them
+    def at(self, nt, dt, ft, cdp):
+        """The function for this cdp: constant extrapolation outside the cdps, linear interpolation between them"""
+        table, cdps = self._table(nt, dt, ft), self.cdps
         if cdp <= cdps[0] or len(cdps) == 1:
             return table[0]
         if cdp >= cdps[-1]:
@@ -229,6 +234,11 @@ def _nmo_trace_function(cdps, functions, smute, lmute, sscale, invert, upward):
         a1 = np.float32((cdps[i + 1] - cdp) / (cdps[i + 1] - cdps[i]))
         a2 = np.float32((cdp - cdps[i]) / (cdps[i + 1] - cdps[i]))
         return a1 * table[i] + a2 * table[i + 1]
+
+
+def _nmo_trace_function(cdps, functions, smute, lmute, sscale, invert, upward):
+    sloths = _CdpVelocities(cdps, functions, lambda v: 1.0 / (v * v))
+    last = [None, None]  # the key of the tables, and the tables
 
     def nmo_trace(trace):
         header = trace.header
@@ -242,7 +252,7 @@ def _nmo_trace_function(cdps, functions, smute, lmute, sscale, invert, upward):
         # the tables only change with the time axis, the offset, and (if there is more than one) the cdp
         key = (nt, dt, ft, offset, cdp)
         if last[0] != key:
-            ovvt = np.ascontiguousarray(sloth_at(sloths(nt, dt, ft), cdp), dtype=np.float32)
+            ovvt = np.ascontiguousarray(sloths.at(nt, dt, ft, cdp), dtype=np.float32)
             last[:] = [key, _nmo.NMOTables(nt, dt, ft, offset, ovvt, smute, upward, invert, sscale)]
         x = np.array(trace)
         last[1].apply(x, lmute)
@@ -294,6 +304,81 @@ def nmo(tnmo=None, vnmo=1500.0, *, cdp=None, smute=1.5, lmute=25, sscale=True, i
     kwargs = dict(cdp=cdp, smute=smute, lmute=lmute, sscale=sscale, invert=invert, upward=upward)
     _nmo_stage((), tnmo=tnmo, vnmo=vnmo, **kwargs)  # check the parameters now
     return Stage(_nmo_stage, tnmo=tnmo, vnmo=vnmo, parallelism='trace', name='nmo', **kwargs)
+
+
+# --------------------------------------------------------------------------------------------------------- taupnmo
+def _taupnmo_ray_parameter(p, p0, dp):
+    if p is not None and dp is not None:
+        raise ValueError("Give the ray parameter (p) or its spacing (dp), not both.")
+    if p is not None:
+        return lambda trace: header_value(trace, p)
+    if dp is None:
+        raise ValueError("The ray parameter of the traces is needed: p (a header name or a function of a trace), or p0 and dp.")
+    # (sutaupnmo takes it from the header, f2 + (tracr - 1) * d2)
+    return lambda trace: p0 + (trace.header['trace_id'] - 1) * dp
+
+
+def _taupnmo_stage(upstream, *, tnmo=None, vnmo=1500.0, p=None, p0=0.0, dp=None, cdp=None, smute=1.5, lmute=25, sscale=True):
+    if smute <= 0.0:
+        raise ValueError("smute must be greater than 0.0")
+    if lmute < 0:
+        raise ValueError("lmute must not be negative")
+    ray_parameter = _taupnmo_ray_parameter(p, p0, dp)
+    cdps, functions = _velocity_functions(tnmo, vnmo, cdp)
+    velocities = _CdpVelocities(cdps, functions, lambda v: v * v)
+    last = [None, None]  # the key of the tables, and the tables
+
+    def taupnmo_trace(trace):
+        header = trace.header
+        nt = trace.n_sample
+        dt = header['d_sample']
+        if not dt:
+            raise ValueError("The trace has no sample interval.")
+        ft = header['sample_start']
+        ray = ray_parameter(trace)
+        cdp_of_trace = header['ensemble_number'] if len(cdps) > 1 else 0
+        # the tables only change with the time axis, the ray parameter, and (if there is more than one) the cdp
+        key = (nt, dt, ft, ray, cdp_of_trace)
+        if last[0] != key:
+            vvt = np.ascontiguousarray(velocities.at(nt, dt, ft, cdp_of_trace), dtype=np.float32)
+            last[:] = [key, _taupnmo.TaupNMOTables(nt, dt, ft, ray, vvt, smute, sscale)]
+        x = np.array(trace)
+        last[1].apply(x, lmute)
+        return trace.replace(x)
+
+    return per_trace(upstream, taupnmo_trace, on_complex='linear')
+
+
+def taupnmo(tnmo=None, vnmo=1500.0, *, p=None, p0=0.0, dp=None, cdp=None, smute=1.5, lmute=25, sscale=True):
+    """NMO for an arbitrary velocity function of tau and CDP, of traces in the tau-p domain (SUTAUPNMO).
+
+    The moveout is ``tau^2 (1 - p^2 v^2)``, with ``p`` the ray parameter of the trace (in the units of 1 / v). The CDP of a
+    trace is its ``ensemble_number``.
+
+    Parameters
+    ----------
+    tnmo, vnmo : arrays
+        NMO times (tau, s) and the velocities for them. Velocities are linearly interpolated in time and constant outside
+        the times given. For a constant velocity just give ``vnmo=constant``.
+    p : header name or function, optional
+        The ray parameter of a trace: the name of a value in ``trace.header``, or a function of a trace.
+    p0, dp : float, optional
+        Instead, the ray parameter of the traces is ``p0 + (trace_id - 1) * dp``. (This is what the program does, with the
+        header words f2, d2 and tracr.)
+    cdp : array, optional
+        The CDPs that the velocity functions are for. Then ``tnmo`` and ``vnmo`` are lists with an array for each
+        CDP. Between CDPs v^2 is interpolated linearly, and outside of them the first and last functions are used.
+    smute : float
+        Samples with NMO stretch exceeding this are zeroed (from the first sample that has it, to the end).
+    lmute : int
+        Length (in samples) of the linear ramp before the muted samples.
+    sscale : bool
+        Divide the output samples by the NMO stretch factor. (The program applies this to the samples that it has muted, which
+        does nothing; here it is applied to the others.)
+    """
+    kwargs = dict(p=p, p0=p0, dp=dp, cdp=cdp, smute=smute, lmute=lmute, sscale=sscale)
+    _taupnmo_stage((), tnmo=tnmo, vnmo=vnmo, **kwargs)  # check the parameters now
+    return Stage(_taupnmo_stage, tnmo=tnmo, vnmo=vnmo, parallelism='trace', name='taupnmo', **kwargs)
 
 
 # ---------------------------------------------------------------------------------------------------- log and ilog

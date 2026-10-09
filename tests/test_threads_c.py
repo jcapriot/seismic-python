@@ -4,14 +4,15 @@ import numpy.testing as npt
 import pytest
 
 from seispy import attributes
-from seispy.amplitudes import centsamp
+from seispy.amplitudes import centsamp, dipdivcor
+from seispy.container import from_iterable
 from seispy.convolution import acorfrac, conv
 from seispy.filters import frac, minphase, phase, tvband
 from seispy.parallel import pmap
-from seispy.stretching import ilog, log, reduce, ttoz
+from seispy.stretching import ilog, log, reduce, taupnmo, ttoz
 from seispy.synthetics import synlv
 from seispy.tapering import ramp, taper
-from seispy.transforms import cepstrum, clogfft, iclogfft, wfft
+from seispy.transforms import cepstrum, clogfft, iclogfft, taup, wfft
 from seispy.windowing import mute
 
 FILTER = [0.0, 0.4, 0.2, 0.5, 0.5]
@@ -38,6 +39,7 @@ STAGES = {
     'wfft': lambda: wfft(),
     'cepstrum': lambda: cepstrum(unwrap=0),
     'log': lambda: log(ntmin=5),
+    'taupnmo': lambda: taupnmo(vnmo=2000.0, p=lambda trace: 0.1 / 2000.0),
     'clogfft': lambda: clogfft(unwrap=0) | iclogfft(),
 }
 
@@ -48,3 +50,24 @@ def test_threads_give_the_same_traces(name):
     expected = samples(synlv(nt=101, nxm=40) | stage)
     got = samples(synlv(nt=101, nxm=40) | pmap(stage, workers=4, chunk=3))
     npt.assert_array_equal(got, expected)
+
+
+PANEL_STAGES = {
+    # (the stages of a panel are not split across workers, but several threads can each transform a panel)
+    'taup_fk': lambda: taup(1, dx=10.0, pmin=0.0, pmax=0.004, np=11),
+    'taup_tx': lambda: taup(2, dx=10.0, pmin=0.0, pmax=0.004, np=11),
+    'dipdivcor': lambda: dipdivcor(25.0, np=10, vmig=2000.0),
+}
+
+
+@pytest.mark.parametrize('name', sorted(PANEL_STAGES))
+def test_threads_can_each_transform_a_panel(name):
+    import concurrent.futures
+
+    stage = PANEL_STAGES[name]()
+    panel = list(synlv(nt=101, nxm=12))
+    expected = samples(from_iterable(panel) | stage)
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        results = list(pool.map(lambda _: samples(from_iterable(panel) | stage), range(16)))
+    for got in results:
+        npt.assert_array_equal(got, expected)

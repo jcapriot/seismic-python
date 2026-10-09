@@ -634,6 +634,21 @@ cdef class _IterableTraceIterator(BaseTraceIterator):
         self.i += 1
         return <Trace> item
 
+    def close(self):
+        """Stop early: lets a generator that this wraps clean up (a stage that put its traces in a temporary directory
+        removes it), instead of leaving that to the garbage collector"""
+        close = getattr(self.it, 'close', None)
+        if close is not None:
+            close()
+
+
+def collection_header_bytes(size_t n_traces):
+    """The bytes that a file of traces starts with, for a file of `n_traces` traces (see `TraceCollection.to_file`): the
+    traces, as `Trace.as_bytes`, follow one after the other"""
+    cdef CollectionHeader hdr = CollectionHeader.__new__(CollectionHeader)
+    hdr.n_traces = n_traces
+    return bytes(hdr.as_bytes())
+
 
 def from_iterable(iterable, n_traces=None):
     """Wrap any iterable of Trace (e.g. a generator) as a trace iterator.

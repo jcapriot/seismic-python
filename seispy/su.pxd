@@ -8,10 +8,12 @@ cdef extern from "cwp.h" nogil:
     enum FileType:
         BADFILETYPE = -1,
         TTY, DISK, DIRECTORY,TAPE, PIPE, FIFO, SOCKET, SYMLINK
-    struct complex:
-        float r,i
-    struct dcomplex:
-        double r,i
+    # (std::complex<float> and std::complex<double>, typedefs of cwp.h: Cython only passes pointers to them, and its own
+    # `float complex` is the same type in C++ mode)
+    ctypedef struct complex:
+        pass
+    ctypedef struct dcomplex:
+        pass
 
     # allocate and free multi-dimensional arrays
     void *alloc1(size_t n1, size_t size)
@@ -93,58 +95,6 @@ cdef extern from "cwp.h" nogil:
     void free1dcomplex(dcomplex *p)
     void free2dcomplex(dcomplex ** p)
     void free3dcomplex(dcomplex ** *p)
-
-    # complex number manipulation
-    complex cadd(complex a, complex b)
-    complex csub(complex a, complex b)
-    complex cmul(complex a, complex b)
-    complex cdiv(complex a, complex b)
-    float rcabs(complex z)
-    complex cmplx(float re, float im)
-    complex conjg(complex z)
-    complex cneg(complex z)
-    complex cinv(complex z)
-    complex cwp_csqrt(complex z)
-    complex cwp_cexp(complex z)
-    complex crmul(complex a, float x)
-
-    # complex functions
-    complex cipow(complex a, int p)
-    complex crpow(complex a, float p)
-    complex rcpow(float a, complex p)
-    complex ccpow(complex a, complex p)
-    complex cwp_ccos(complex a)
-    complex cwp_csin(complex a)
-    complex cwp_ccosh(complex a)
-    complex cwp_csinh(complex a)
-    complex cwp_cexp1(complex a)
-    complex cwp_clog(complex a)
-
-    # *double complex
-    dcomplex dcadd(dcomplex a, dcomplex b)
-    dcomplex dcsub(dcomplex a, dcomplex b)
-    dcomplex dcmul(dcomplex a, dcomplex b)
-    dcomplex dcdiv(dcomplex a, dcomplex b)
-    double drcabs(dcomplex z)
-    dcomplex dcmplx(double re, double im)
-    dcomplex dconjg(dcomplex z)
-    dcomplex dcneg(dcomplex z)
-    dcomplex dcinv(dcomplex z)
-    dcomplex dcsqrt(dcomplex z)
-    dcomplex dcexp(dcomplex z)
-    dcomplex dcrmul(dcomplex a, double x)
-
-    # complex functions
-    dcomplex dcipow(dcomplex a, int p)
-    dcomplex dcrpow(dcomplex a, float p)
-    dcomplex rdcpow(float a, dcomplex p)
-    dcomplex dcdcpow(dcomplex a, dcomplex p)
-    dcomplex dccos(dcomplex a)
-    dcomplex dcsin(dcomplex a)
-    dcomplex dccosh(dcomplex a)
-    dcomplex dcsinh(dcomplex a)
-    dcomplex dcexp1(dcomplex a)
-    dcomplex dclog(dcomplex a)
 
     void chermite(int n, float x[], float y[], float yd[][4])
 
@@ -278,9 +228,9 @@ cdef extern from "cwp.h" nogil:
                              float *phase)
 
     # (no longer used, we use numpy's FFT) Prime Factor FFTs
-    # int npfa(int nmin)
+    int npfa(int nmin)
     # int npfao(int nmin, int nmax)
-    # int npfar(int nmin)
+    int npfar(int nmin)
     # int npfaro(int nmin, int nmax)
     # void pfacc(int isign, int n, complex z[])
     # void pfarc(int isign, int n, float rz[], complex cz[])
@@ -870,6 +820,12 @@ cdef extern from "su.h" nogil:
     void su_stackup_finish(int n, const double *sum, const float *samplefold, float *out)
     void su_median_across(int n, int nwin, const float *rows, size_t stride, float *out, float *scratch)
     void su_mix_across(int n, int nwin, const float *rows, size_t stride, const float *w, float *out)
+    void su_addsinc_table()
+    float su_dipdivcor_scale()
+    void su_dipdivcor_table(int nt, int np, float dt, const float *tt, const float *vt, float *vs, float vind[][4],
+        float *divcor, int trans, int norm)
+    void su_dipdivcor_filter(float k, float dpx, float dt, int np, int nw, int nt, const float *div,
+        const complex *p, complex *q, complex *kq, complex *qq)
     void su_gain_tpow_table(float *tpowfac, int nt, float tmin, float dt, float tpow, float tred)
     void su_gain_epow_table(float *epowfac, int nt, float tmin, float dt, float epow, float etpow)
     void su_gain(float *data, float tpow, float epow, float gpow,
@@ -887,6 +843,18 @@ cdef extern from "su.h" nogil:
         int invert, int sscale, float *ttn, float *atn, float *tnt, float *at, int *itmute_out)
     void su_nmo(float *data, int nt, float dt, float ft, int itmute, int lmute, int sscale, int invert,
         const float *ttn, const float *atn, const float *tnt, const float *at, float *q)
+    void su_taupnmo_tables(int nt, float dt, float ft, float p, const float *vvt, float smute, float *ttn, float *atn,
+            int *itmute_out)
+    void su_taupnmo(float *data, int nt, float dt, float ft, int itmute, int lmute, int sscale,
+            const float *ttn, const float *atn, float *q)
+
+    # velocity analysis
+    int su_velan_accumulate(int nt, float dt, float ft, float offset, int nv, float dv, float fv, float anis1,
+            float anis2, float smute, const float *data, float *num, float *den, float *nnz)
+    void su_velan_semblance(int nt, int ntout, int dtratio, int nsmooth, float pwr, const float *num, const float *den,
+            const float *nnz, float *sem)
+    void su_relan_accumulate(int nz, float dz, float fz, float offset, int nr, float dr, float fr, float smute,
+            const float *data, float *num, float *den, float *nnz)
 
     # operations
     void su_op_saf(float *data, int nt, float *tmp)
@@ -900,3 +868,17 @@ cdef extern from "su.h" nogil:
                   float v00, float dvdx, float dvdz,
                   int ls, int er, int ob, Wavelet *w, int nr, Reflector *r, int lhd, int nhd, float *hd
               );
+
+
+cdef extern from "taup.h" nogil:
+    # slant stacks (tau-p transforms), from par/lib/taup.c
+    void su_taup_tables()
+    void fwd_FK_sstack(float dt, int nt, int nx, float xmin, float dx, int np,
+                       float pmin, float dp, float fmin, float **traces, float **out_traces)
+    void fwd_tx_sstack(float dt, int nt, int nx, float xmin, float dx, int np,
+                       float pmin, float dp, float **traces, float **out_traces)
+    void inv_FK_sstack(float dt, int nt, int nx, float xmin, float dx, int np,
+                       float pmin, float dp, float fmin, float **traces, float **out_traces)
+    void inv_tx_sstack(float dt, int nt, int nx, int npoints, float xmin,
+                       float dx, int np, float pmin, float dp, float **traces,
+                       float **out_traces)

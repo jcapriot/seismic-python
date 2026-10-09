@@ -2,14 +2,16 @@ module_path = 'seispy/attributes'
 
 python_sources = [
     '__init__.py',
+    '_stats.py',
 ]
 
 py.extension_module(
     '_attributes',
     '_attributes.pyx',
     cython_args: cython_args,
-    c_args: cython_c_args,
+    cpp_args: cython_c_args,
     install: true,
+    limited_api: limited_api,
     subdir: module_path,
     dependencies : [py_dep, su_dep],
 )

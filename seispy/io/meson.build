@@ -14,8 +14,9 @@ py.extension_module(
     '_io',
     '_io.pyx',
     cython_args: cython_args,
-    c_args: io_args,
+    cpp_args: io_args,
     install: true,
+    limited_api: limited_api,
     subdir: module_path,
     dependencies: [py_dep],
     include_directories: spy_include,
@@ -25,8 +26,9 @@ py.extension_module(
     'byteswapping',
     'byteswapping.pyx',
     cython_args: cython_args,
-    c_args: io_args,
+    cpp_args: io_args,
     install: true,
+    limited_api: limited_api,
     subdir: module_path,
     dependencies: [py_dep],
     include_directories: spy_include,
@@ -36,14 +38,15 @@ py.extension_module(
     'segy_standard',
     'segy_standard.pyx',
     cython_args: cython_args,
-    c_args: io_args,
+    cpp_args: io_args,
     install: true,
+    limited_api: limited_api,
     subdir: module_path,
     dependencies: [py_dep, su_dep],
     include_directories: spy_include,
 )
 
-python_sources = ['__init__.py']
+python_sources = ['__init__.py', 'tracefile.py']
 
 py.install_sources(
   python_sources,

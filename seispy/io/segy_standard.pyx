@@ -245,12 +245,12 @@ cdef void convert_to_float(convertible *inp, float *out, size_t n_items) noexcep
 
 
 @cython.boundscheck(False)
-cdef void unpack3bytes_to_4(uint8_t *inp, size_t n_items, str endian_flag, bint signed) noexcept nogil:
+cdef void unpack3bytes_to_4(uint8_t *inp, size_t n_items, bint big_endian, bint signed) noexcept nogil:
     cdef:
         size_t i, i4, i3
 
     with nogil:
-        if endian_flag == ">":
+        if big_endian:
             # pad to 4 bytes by inserting a (signed) 0 before
             # (it is big endian after all)
             if not signed:
@@ -276,7 +276,7 @@ cdef void unpack3bytes_to_4(uint8_t *inp, size_t n_items, str endian_flag, bint 
                     else:
                         inp[i4] = 0
 
-        elif endian_flag == "<":
+        else:
             if not signed:
                 for i in range(n_items-1, -1, -1):
                     i4 = i * 4
@@ -716,7 +716,7 @@ cdef class SEGYTrace:
             if tr._itemsize == 3:
                 if endian_flag == "<>":
                     raise NotImplementedError("Reading pairwise byteswapped 3 byte values is not a defined behavoir.")
-                unpack3bytes_to_4(&tr.data[0], nsamps, endian_flag, bhdr.data_format==DataFormat.int24)
+                unpack3bytes_to_4(&tr.data[0], nsamps, endian_flag == ">", bhdr.data_format==DataFormat.int24)
                 # now it's the corresponding 4 byte size.
                 tr._itemsize = 4
                 tr._dtype = DataFormat.int32 if bhdr.data_format == DataFormat.int24 else DataFormat.uint32

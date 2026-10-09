@@ -14,7 +14,8 @@ pip install .
 At the moment, the external package requirements are quite light:
 
 * `numpy>=1.26.0` To handle some numerical IO
-* `matplotlib`
+
+and, for `seispy.plotting` and the examples, `matplotlib` (`pip install seismic-python[plot]`).
 
 ### In place builds:
 In place builds, useful for developers, can be accomplished with:
@@ -248,6 +249,47 @@ from seispy.io import read_segy
 traces = read_segy("line.sgy") | bfilt(f_pass_low=40.0, f_stop_low=50.0) | gain(agc=True, wagc=0.5)
 ```
 
+## Free threaded python
+The extension modules say that they can run without the GIL, so they work with the free threaded builds of python (3.14t and
+later, `python3.14t`), and importing them does not turn the GIL back on. The SU library routines that the stages call have no
+state that threads share: their lookup tables and scratch arrays are arguments, the tables that SU made on first use (the
+Hilbert transform, the sinc interpolation) are made when the modules are imported, and the random numbers of `addnoise`,
+`jitter` and `randspike` come from a generator with its own state for each stage. So the parallelism below (`prefetch` and
+`pmap`) needs no GIL to be free of it: the python parts of the stages run in parallel too, not only the C kernels.
+
+What can be shared by threads is the stages (the specifications that are chained with `|`) and the traces, which are not changed
+by the stages. What can not is an iterator in the middle of a pipeline: take its traces from one thread at a time (which is
+what `prefetch` and `pmap` do). `tests/test_free_threading.py` has the threads that use the same stages and traces at once.
+
+### Stable ABI (abi3) wheels
+The modules are built against the limited C API of python 3.12, so one `cp312-abi3` wheel per platform works for every
+GIL-enabled CPython from 3.12 on. The free threaded builds have no stable ABI (python 3.14t has none, and Cython can not yet
+generate code for the one of 3.15t), so they get their own wheels (`cp314t`, `cp315t`) that are built without it. To build in
+place with a free threaded python, turn the limited API off:
+
+```
+pip install --no-build-isolation --editable . --config-settings=setup-args="-Dpython.allow_limited_api=false"
+```
+
+## Temporary files
+`sort` and `flip` read all of their traces before they write the first. They keep them in memory while they fit in a budget
+(1 GiB), and past that they put them on disk: `sort` as chunks that it merges, so that data bigger than memory can be sorted,
+and `flip` as a file that is memory mapped. When they do, they say so, loudly: a warning (from the logger `seispy.spool`, which
+python prints to stderr unless logging is set up otherwise) names the stage and the temporary directory, and the directory is
+removed when the stage is done, whether it finished, failed or was stopped.
+
+```python
+source | sort('ensemble_number', 'offset')                         # memory, or the default directory if it must
+source | sort('ensemble_number', tmpdir='D:/scratch', memory=2**28)  # a directory, and a smaller budget
+source | sort('offset', memory=0)                                    # everything on disk, as susort does
+source | sort('offset', tmpdir=False)                                # never the disk
+```
+
+The directory is, from the first that is set: the `tmpdir` of the stage, `seispy.spool.tmpdir`, the environment variable
+`SEISPY_TMPDIR`, `CWP_TMPDIR` (the one the SU programs use), and the temporary directory of the system. The budget likewise:
+`memory`, `seispy.spool.memory`, `SEISPY_MEMORY` (bytes). The stages that transform a whole panel (`specfk`, `dipdivcor`,
+`taup`, ...) need the panel in memory to do it, so they have no `tmpdir`.
+
 ## Pipes and parallelism
 Processing steps can be written as input-less *stages* and chained with `|`, just like the shell:
 
@@ -313,9 +355,20 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.transforms.st`, `gabor`, `cwt` | `sust`, `sugabor`, `sucwt` | time-frequency panels: Stockwell transform, multifilter analysis, wavelet transform |
 | `seispy.windowing.vlength` | `suvlength` | make traces the same length |
 | `seispy.stacking.stack`, `divstack`, `pws`, `stackup` | `sustack`, `sudivstack`, `supws`, `sustackup` | stack the traces of each gather (a run of equal `key`): mean, diversity, phase-weighted; stacking to any key combination in any order |
-| `seispy.windowing.sort`, `mixgathers` | `susort`, `sumixgathers` | sort by header values (in memory), fill the gaps of a gather from another |
+| `seispy.windowing.sort`, `mixgathers` | `susort`, `sumixgathers` | sort by header values (on disk when it does not fit in memory), fill the gaps of a gather from another |
 | `seispy.operations.mix`, `sum2`, `diff2`, `prod2`, `quo2`, `ptsum`, `ptdiff`, `ptprod`, `ptquo`, `zipper`, `zippol` | `sumix`, `suop2` | moving average over traces, arithmetic on two data sets (or a data set and a trace), complex traces from two real ones |
 | `seispy.filters.median`, `medmix` | `sumedian` | median or mix about a moveout curve, to suppress events that have that moveout |
+| `seispy.stretching.taupnmo` | `sutaupnmo` | NMO of tau-p traces, for a velocity function of tau and CDP, with the ray parameter from a header value or a function |
+| `seispy.amplitudes.dipdivcor` | `sudipdivcor` | dip-dependent divergence correction in the wavenumber domain, for the traces of the stream as one panel |
+| `seispy.transforms.specfx`, `specfk`, `speck1k2` | `suspecfx`, `suspecfk`, `suspeck1k2` | amplitude spectra: of each trace, f-k of a panel, and 2D (k1, k2) of a panel (numpy's FFT; the axis across the traces is described in the docstring) |
+| `seispy.filters.dipfilt` | `sudipfilt` | dip (slope) filter in the f-k domain, with a bias slope that is made horizontal first (numpy's FFT) |
+| `seispy.transforms.taup` | `sutaup` | forward and inverse slant stacks (tau-p transforms) of a panel, in the t-x and F-K domains (`option` 1 to 4) |
+| `seispy.velocity.velan`, `relan` | `suvelan`, `surelan` | stacking velocity semblance of CDP gathers, residual moveout semblance of migrated gathers: one semblance trace per velocity (or r parameter) for each gather (`ensemble_trace_number` counts them) |
+| `seispy.windowing.split`, `cleave`, `putgthr` | `susplit`, `sucleave`, `suputgthr` | write the traces that go through them to files, by the value of a header word, by ranges of it, or a file for each gather (in seispy's own format, `.spy`) |
+| `seispy.windowing.getgthr`, `sorty` | `sugetgthr`, `susorty` | the traces of the files of a directory (a source), a small shot data set that shows the geometry in the data, to look at sorting |
+| `seispy.tapering.gausstaper` | `sugausstaper` | multiply traces by a gaussian of a header value (the offset) |
+| `seispy.operations.flip`, `vcat` | `suflip`, `suvcat` | turn a data set over (rotate, transpose, reverse), append a second data set to the ends of the traces with an overlap |
+| `seispy.attributes.mean`, `max`, `quantile`, `histogram`, `cmp` | `sumean`, `sumax`, `suquantile`, `suhistogram`, `sucmp` | report on a data set (and return the results, rather than make traces): L-p means, maxima/minima/rms/threshold peaks, quantiles and ranks, histograms, comparison of two data sets |
 
 ```python
 from seispy.synthetics import synlv
@@ -333,18 +386,19 @@ arrays that the programs keep in `static` variables, filled in by the first trac
 is what lets the stages run in parallel (`tests/test_threads_c.py` checks that). The few places where the library versions
 differ from the programs, because the program is plainly wrong, are listed at the top of each source file.
 
-* **The program is the SU code:** `gain`, `bfilt`, `nmo`, `resamp`, `hilb`, `analytic`, `synlv`, `centsamp`, `mute` (every mode),
+* **The program is the SU code:** `gain`, `bfilt`, `nmo`, `taupnmo`, `taup`, `velan`, `relan`, `resamp`, `hilb`, `analytic`, `synlv`, `centsamp`, `mute` (every mode),
   `taper`, `ramp`, the wavelets (`seispy.waveforms`) and the sweeps, `log`, `ilog`, `ttoz`, `ztot` and `tsq`, the attributes
   (`seispy.attributes`), `conv`, `acor`, `xcor` and `refcon` (the SU convolution and correlation), `pgc`, the stacks
   (`stack`, `divstack`, `pws`, `stackup`), and `median` and `medmix`. The random numbers of `addnoise`, `addflatnoise`, `jitter`
   and `randspike` are those of SU's generators, so for the same `seed` they make the numbers that the programs make.
-* **numpy's FFT, with the SU code between the transforms:** `frac`, `phase`, `minphase`, `tvband`, `wfft`, `acorfrac`,
+* **numpy's FFT, with the SU code between the transforms:** `dipdivcor` (the transform in x), `specfx`, `specfk`, `speck1k2`, `dipfilt`, `frac`, `phase`, `minphase`, `tvband`, `wfft`, `acorfrac`,
   `clogfft`, `iclogfft`, `cepstrum`, `icepstrum` (phase unwrapping is SU's too), `st`, `gabor` and `cwt`. The SU programs
   pad every trace for their prime-factor FFT, which is not carried over. `filter` designs its filter with `polygonalFilter` of the
   SU sources, and filters with numpy's FFT.
 * **Plain numpy, where the program is only arithmetic:** the operations of `suop` (all but `saf`, `freq` and `despike`),
   `zero`, `nan`, `normalize`, `weight`, `divcor`, `impedance`, `ai2r`, `r2ai`, `wind`, `kill`, `vlength`, `sort`,
   `mixgathers`, `suop2` (the binary operations), `shift`, `reduce`, `real`, `imag`, `amp`, `fft` and `ifft`,
+  `gausstaper`, `flip`, `vcat`, the reports of `seispy.attributes` (`mean`, `max`, `quantile`, `histogram`, `cmp`),
   and the source `null`. (`mix` uses the SU weighted sum.)
 
 The stages do not

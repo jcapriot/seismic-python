@@ -1,12 +1,12 @@
-module_path = 'seispy/tapering'
+module_path = 'seispy/velocity'
 
 python_sources = [
     '__init__.py',
 ]
 
 py.extension_module(
-    '_taperc',
-    '_taperc.pyx',
+    '_kernels',
+    '_kernels.pyx',
     cython_args: cython_args,
     cpp_args: cython_c_args,
     install: true,

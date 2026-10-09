@@ -1,5 +1,5 @@
 """
-Tapering programs: SUTAPER and SURAMP (``su/main/tapering``), with the taper functions of the SU library (``_taper.pyx``).
+Tapering programs: SUTAPER, SURAMP and SUGAUSSTAPER (``su/main/tapering``), with the taper functions of the SU library (``_taper.pyx``).
 
 Where a program plainly does not do what its documentation says (see the notes on each) this does what the
 documentation says.
@@ -7,10 +7,10 @@ documentation says.
 import numpy as np
 
 from ..container import as_trace_iterator, from_iterable
-from ..stage import Stage, per_trace, stage
+from ..stage import Stage, header_value, per_trace, stage
 from . import _taperc as _c
 
-__all__ = ['taper', 'ramp']
+__all__ = ['taper', 'ramp', 'gausstaper']
 
 F32 = np.float32
 _TAPER_TYPES = (1, 2, 3, 4, 5)
@@ -128,3 +128,28 @@ def _nint(x):
 #
 # The default is a no-op.
 ramp = stage(_ramp, parallelism='trace', name='ramp', validate=True)
+
+
+# ------------------------------------------------------------------------------------------------------ gausstaper
+def _gausstaper(upstream, *, key='offset', x0=300.0, xw=50.0):
+    if not xw:
+        raise ValueError("xw must not be 0")
+    x0, xw = F32(x0), F32(xw)
+
+    def gausstaper_trace(trace):
+        # (the weight is made in double precision, as in the program)
+        q = (F32(header_value(trace, key)) - x0) / xw
+        weight = np.exp(-(np.float64(q) ** 2))
+        return trace.replace((np.asarray(trace) * weight).astype(np.asarray(trace).dtype, copy=False))
+
+    return per_trace(upstream, gausstaper_trace, on_complex='native')
+
+
+# SUGAUSSTAPER: multiply traces with a symmetrical gaussian taper, w = exp(-((key - x0) / xw)**2)
+#
+# key : the header value (or a function of a trace), default 'offset'
+# x0 : the value of the key at the center of the taper, default 300
+# xw : the width of the taper, in units of the key, default 50
+#
+# Unlike taper, x0 is the center of the taper rather than the edges of the data.
+gausstaper = stage(_gausstaper, parallelism='trace', name='gausstaper', validate=True)

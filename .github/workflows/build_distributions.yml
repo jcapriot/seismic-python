@@ -20,14 +20,53 @@ jobs:
         with:
           fetch-depth: 0
 
+      # the build frontend is uv (see pyproject.toml): it has to be on the PATH of the windows and macos runners
+      - uses: astral-sh/setup-uv@v7
+
       - name: Build wheels
         # (the settings, and the tests that the wheels are run through, are in pyproject.toml)
-        uses: pypa/cibuildwheel@v3.2.1
+        uses: pypa/cibuildwheel@v4.3.0
 
       - uses: actions/upload-artifact@v5
         with:
           name: cibw-wheels-${{ matrix.os }}-${{ strategy.job-index }}
           path: ./wheelhouse/*.whl
+
+  test_abi3_wheel:
+    # The cp312 wheel is an abi3 wheel (see [tool.meson-python] in pyproject.toml): it has to work on every newer GIL-enabled
+    # CPython too, but cibuildwheel only tests it on 3.12. Install the wheel that was built on linux in the newer ones.
+    name: Test the abi3 wheel on Python ${{ matrix.python }} (${{ matrix.os }})
+    needs: build_wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.13", "3.14", "3.15"]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: cibw-wheels-${{ matrix.os }}-*
+          path: wheelhouse
+          merge-multiple: true
+
+      - name: Install the wheel and run the tests
+        shell: bash
+        run: |
+          uv venv --python ${{ matrix.python }} --allow-existing .venv-abi3
+          source .venv-abi3/bin/activate 2>/dev/null || source .venv-abi3/Scripts/activate
+          # (linux makes a musllinux wheel besides the manylinux one: take the one that runs on these runners)
+          wheel=$(ls wheelhouse/*-cp312-abi3-*.whl | grep -v musllinux | head -n 1)
+          echo "testing $wheel"
+          uv pip install pytest "$wheel"
+          # run from outside of the source tree, so that the wheel is what is imported
+          mkdir ../run && cp -r tests examples ../run && cd ../run
+          python -m pytest tests
 
   build_sdist:
     name: Build source distribution

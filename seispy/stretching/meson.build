@@ -4,13 +4,14 @@ python_sources = [
     '__init__.py',
 ]
 
-foreach cy_source : ['_resample.pyx', '_nmo.pyx', '_stretch.pyx']
+foreach cy_source : ['_resample.pyx', '_nmo.pyx', '_taupnmo.pyx', '_stretch.pyx']
     py.extension_module(
         cy_source.replace('.pyx', ''),
         cy_source,
         cython_args: cython_args,
-        c_args: cython_c_args,
+        cpp_args: cython_c_args,
         install: true,
+        limited_api: limited_api,
         subdir: module_path,
         dependencies : [py_dep, su_dep],
     )
