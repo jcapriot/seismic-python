@@ -8,7 +8,7 @@ py.extension_module(
     '_kernels',
     '_kernels.pyx',
     cython_args: cython_args,
-    c_args: cython_c_args,
+    cpp_args: cython_c_args,
     install: true,
     limited_api: limited_api,
     subdir: module_path,

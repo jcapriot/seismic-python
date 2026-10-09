@@ -8,10 +8,12 @@ cdef extern from "cwp.h" nogil:
     enum FileType:
         BADFILETYPE = -1,
         TTY, DISK, DIRECTORY,TAPE, PIPE, FIFO, SOCKET, SYMLINK
-    struct complex:
-        float r,i
-    struct dcomplex:
-        double r,i
+    # (std::complex<float> and std::complex<double>, typedefs of cwp.h: Cython only passes pointers to them, and its own
+    # `float complex` is the same type in C++ mode)
+    ctypedef struct complex:
+        pass
+    ctypedef struct dcomplex:
+        pass
 
     # allocate and free multi-dimensional arrays
     void *alloc1(size_t n1, size_t size)
@@ -93,58 +95,6 @@ cdef extern from "cwp.h" nogil:
     void free1dcomplex(dcomplex *p)
     void free2dcomplex(dcomplex ** p)
     void free3dcomplex(dcomplex ** *p)
-
-    # complex number manipulation
-    complex cadd(complex a, complex b)
-    complex csub(complex a, complex b)
-    complex cmul(complex a, complex b)
-    complex cdiv(complex a, complex b)
-    float rcabs(complex z)
-    complex cmplx(float re, float im)
-    complex conjg(complex z)
-    complex cneg(complex z)
-    complex cinv(complex z)
-    complex cwp_csqrt(complex z)
-    complex cwp_cexp(complex z)
-    complex crmul(complex a, float x)
-
-    # complex functions
-    complex cipow(complex a, int p)
-    complex crpow(complex a, float p)
-    complex rcpow(float a, complex p)
-    complex ccpow(complex a, complex p)
-    complex cwp_ccos(complex a)
-    complex cwp_csin(complex a)
-    complex cwp_ccosh(complex a)
-    complex cwp_csinh(complex a)
-    complex cwp_cexp1(complex a)
-    complex cwp_clog(complex a)
-
-    # *double complex
-    dcomplex dcadd(dcomplex a, dcomplex b)
-    dcomplex dcsub(dcomplex a, dcomplex b)
-    dcomplex dcmul(dcomplex a, dcomplex b)
-    dcomplex dcdiv(dcomplex a, dcomplex b)
-    double drcabs(dcomplex z)
-    dcomplex dcmplx(double re, double im)
-    dcomplex dconjg(dcomplex z)
-    dcomplex dcneg(dcomplex z)
-    dcomplex dcinv(dcomplex z)
-    dcomplex dcsqrt(dcomplex z)
-    dcomplex dcexp(dcomplex z)
-    dcomplex dcrmul(dcomplex a, double x)
-
-    # complex functions
-    dcomplex dcipow(dcomplex a, int p)
-    dcomplex dcrpow(dcomplex a, float p)
-    dcomplex rdcpow(float a, dcomplex p)
-    dcomplex dcdcpow(dcomplex a, dcomplex p)
-    dcomplex dccos(dcomplex a)
-    dcomplex dcsin(dcomplex a)
-    dcomplex dccosh(dcomplex a)
-    dcomplex dcsinh(dcomplex a)
-    dcomplex dcexp1(dcomplex a)
-    dcomplex dclog(dcomplex a)
 
     void chermite(int n, float x[], float y[], float yd[][4])
 

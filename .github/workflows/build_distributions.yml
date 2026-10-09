@@ -60,7 +60,10 @@ jobs:
         run: |
           uv venv --python ${{ matrix.python }} --allow-existing .venv-abi3
           source .venv-abi3/bin/activate 2>/dev/null || source .venv-abi3/Scripts/activate
-          uv pip install pytest wheelhouse/*-cp312-abi3-*.whl
+          # (linux makes a musllinux wheel besides the manylinux one: take the one that runs on these runners)
+          wheel=$(ls wheelhouse/*-cp312-abi3-*.whl | grep -v musllinux | head -n 1)
+          echo "testing $wheel"
+          uv pip install pytest "$wheel"
           # run from outside of the source tree, so that the wheel is what is imported
           mkdir ../run && cp -r tests examples ../run && cd ../run
           python -m pytest tests

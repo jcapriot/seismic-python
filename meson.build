@@ -1,11 +1,14 @@
 project(
     'seispy',
-    'c', 'cython',
+    'c', 'cpp', 'cython',
     version : '0.0.1a0',
     license: 'MIT',
+    # (the SU sources are C++ too, so the extension modules are, and no declaration needs to be wrapped in extern "C")
+    default_options: ['cython_language=cpp', 'cpp_std=c++17'],
 )
 
 cc = meson.get_compiler('c')
+cpp = meson.get_compiler('cpp')
 cy = meson.get_compiler('cython')
 
 py_mod = import('python')
@@ -14,7 +17,7 @@ py_dep = py.dependency()
 
 m_dep = cc.find_library('m', required : false)
 if m_dep.found()
-  add_project_link_arguments('-lm', language : 'c')
+  add_project_link_arguments('-lm', language : ['c', 'cpp'])
 endif
 
 _global_c_args = cc.get_supported_arguments(
@@ -24,6 +27,13 @@ _global_c_args = cc.get_supported_arguments(
   '-Wno-misleading-indentation',
 )
 add_project_arguments(_global_c_args, language : 'c')
+add_project_arguments(cpp.get_supported_arguments(_global_c_args), language : 'cpp')
+# (the SU headers have string literals as `char *`, which GCC and clang allow in C++, and MSVC needs to be told to)
+if cpp.get_id() == 'msvc'
+  add_project_arguments('/Zc:strictStrings-', language : 'cpp')
+else
+  add_project_arguments(cpp.get_supported_arguments('-Wno-write-strings', '-Wno-writable-strings'), language : 'cpp')
+endif
 
 # NumPy include directory
 numpy_nodepr_api = ['-DNPY_NO_DEPRECATED_API=NPY_1_22_API_VERSION']
