@@ -1,5 +1,6 @@
 """
-Layered media: SUGOUPILLAUDPO, the primaries-only impulse response of a lossless Goupillaud medium, and SUSYNCZ, zero-offset data over
+Layered media: SUGOUPILLAUDPO and SUGOUPILLAUD, the primaries-only impulse response of a lossless Goupillaud medium and the
+full one with the multiples, and SUSYNCZ, zero-offset data over
 dipping interfaces of constant velocity layers (``su/main/synthetics_waveforms_testpatterns``).
 
 A Goupillaud medium has layers of the same two-way traveltime. The traces that go in are series of reflection coefficients
@@ -21,10 +22,11 @@ from ..container import Trace, from_iterable
 from ..stage import per_trace, stage
 from . import _goupillaud, _syncz
 
-__all__ = ['goupillaudpo', 'syncz']
+__all__ = ['goupillaudpo', 'goupillaud', 'syncz']
 
 
-def _goupillaudpo(upstream, *, l=1, k=1, tmax=None, pV=1):
+def _seismograms(upstream, *, l, k, tmax, pV, primaries):
+    """A seismogram (with only the primaries, or with the multiples) of every trace of upstream, which is a reflectivity series"""
     if pV not in (1, -1):
         raise ValueError("The field-type flag pV should be either 1 or -1.")
     if k < 1:
@@ -33,6 +35,8 @@ def _goupillaudpo(upstream, *, l=1, k=1, tmax=None, pV=1):
         raise ValueError("Source layer l must be >= 1 (l=1 corresponds to a surface source).")
     if tmax is not None and tmax < 0:
         raise ValueError("The number of the output time samples tmax cannot be negative.")
+    default_tmax = _goupillaud.goupillaudpo_tmax if primaries else _goupillaud.goupillaud_tmax
+    kernel = _goupillaud.goupillaudpo if primaries else _goupillaud.goupillaud
 
     def seismogram(trace):
         r = np.ascontiguousarray(np.asarray(trace), dtype=np.float32)
@@ -40,13 +44,17 @@ def _goupillaudpo(upstream, *, l=1, k=1, tmax=None, pV=1):
         if n < 0:
             raise ValueError("The reflectivity has no samples.")
         if n == 0:
+            if not primaries:
+                raise ValueError("The number of subsurface interfaces n must be >=1!")
             warnings.warn("WARNING: model without subsurface reflectors!")
         if l > n + 1:
             raise ValueError("The current version of the program requires l<=n+1.")
-        if k > n + 1:
+        if primaries and k > n + 1:
             raise ValueError("The receiver layer k must be at most n+1 (the number of reflection coefficients).")
-        length = _goupillaud.goupillaudpo_tmax(n, l, k) if tmax is None else tmax
-        status, out, odd = _goupillaud.goupillaudpo(r, l, k, length, pV)
+        length = default_tmax(n, l, k) if tmax is None else tmax
+        if length < 1 and not primaries:
+            raise ValueError("The seismogram has no samples.")
+        status, out, odd = kernel(r, l, k, length, pV)
         if status == -1:
             raise ValueError("Invalid reflection coefficient encountered.")
         if status == -2:
@@ -59,6 +67,14 @@ def _goupillaudpo(upstream, *, l=1, k=1, tmax=None, pV=1):
     return per_trace(upstream, seismogram)
 
 
+def _stage_goupillaudpo(upstream, *, l=1, k=1, tmax=None, pV=1):
+    return _seismograms(upstream, l=l, k=k, tmax=tmax, pV=pV, primaries=True)
+
+
+def _stage_goupillaud(upstream, *, l=1, k=1, tmax=None, pV=1):
+    return _seismograms(upstream, l=l, k=k, tmax=tmax, pV=pV, primaries=False)
+
+
 # SUGOUPILLAUDPO: the primaries-only impulse response of a lossless Goupillaud medium for plane waves at normal incidence
 #
 # l : the source layer, 1 <= l <= n + 1 for n + 1 reflection coefficients; the source is at the top of the layer, default 1
@@ -68,7 +84,26 @@ def _goupillaudpo(upstream, *, l=1, k=1, tmax=None, pV=1):
 #
 # For a vector field a buried source makes a spike of amplitude 1 going down and -1 going up; a buried pressure source makes 1 in
 # both directions; a surface source makes only a downgoing spike of amplitude 1.
-goupillaudpo = stage(_goupillaudpo, parallelism='trace', name='goupillaudpo', validate=True)
+goupillaudpo = stage(_stage_goupillaudpo, parallelism='trace', name='goupillaudpo', validate=True)
+
+
+# SUGOUPILLAUD: the impulse response of a lossless Goupillaud medium for plane waves at normal incidence, with the multiples
+#
+# The parameters are those of goupillaudpo, with these differences: the receiver can be in the homogeneous half-space below the
+# layers (k > n + 1), there has to be at least one interface (n >= 1), and the default tmax is long enough for the whole response
+# of the layers (2 n + 2 - (l - 1) - (k - 1)) / 2, or k for a receiver below them.
+#
+# The seismogram is the sum of the up- and downgoing waves at the top of layer k; when the source and the receiver are in the same
+# layer it is the average of the one for a receiver just below the source and one just above, so that the displacement is 0 (or the
+# pressure 1) at the source at time 0.
+#
+# Deviation from SU: for a buried source (l > 1) and a receiver at or below it (k >= l), sugoupillaud does not give the response of
+# the layers (it leaves out the reflections of the source's upgoing wave from the surface and the interfaces above it, and for a
+# pressure source has the wrong amplitude of the downgoing wave, so that it is not consistent with goupillaudpo to first order in the
+# reflection coefficients). That case is computed here by stepping the waves through the layers, with the source as described in
+# SU's documentation (a downgoing spike 1 and an upgoing spike -pV); for k = l the two direct spikes average to (1 - pV) / 2. Every other case is the
+# program's, and agrees with a simulation of the layers to rounding.
+goupillaud = stage(_stage_goupillaud, parallelism='trace', name='goupillaud', validate=True)
 
 
 # ------------------------------------------------------------------------------------------------------------ syncz

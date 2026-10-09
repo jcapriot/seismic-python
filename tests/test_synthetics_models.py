@@ -8,7 +8,7 @@ import numpy.testing as npt
 import pytest
 
 from seispy.container import Trace, from_iterable
-from seispy.synthetics import _born, _events, addevent, goupillaudpo, imp2d, imp3d, nhmospike, syncz
+from seispy.synthetics import _born, _events, addevent, goupillaud, goupillaudpo, imp2d, imp3d, nhmospike, syncz
 
 
 def samples(traces):
@@ -541,6 +541,7 @@ def test_the_models_can_be_made_by_several_threads_at_once():
         'imp3d': lambda: samples(imp3d(nshot=2, nrec=3, nt=200, dir=1, gxmin=50.0, dgx=70.0)),
         'syncz': lambda: samples(syncz(ntr=8, nt=200)),
         'goupillaudpo': lambda: samples(from_iterable(reflectivity_traces()) | goupillaudpo(l=3, k=9)),
+        'goupillaud': lambda: samples(from_iterable(reflectivity_traces()) | goupillaud(l=1, k=6)),
         'addevent': lambda: samples(from_iterable(gather([0.0, 300.0, 600.0])) | addevent(t0=0.2, vel=2000.0)),
     }
     with concurrent.futures.ThreadPoolExecutor(8) as pool:
@@ -548,3 +549,156 @@ def test_the_models_can_be_made_by_several_threads_at_once():
             expected = make()
             for got in pool.map(lambda _: make(), range(16)):
                 npt.assert_array_equal(got, expected, err_msg=name)
+
+
+# ------------------------------------------------------------------------------------------------------- goupillaud
+def simulate_layers(r, l, k, steps, pV):
+    """The waves in the layers 1 .. n+1 of a Goupillaud medium, by brute force, stepped by the one-way time z: the field at the top of
+    layer k at the times 0, z, 2z, ....  The interface i scatters with the coefficients r_i (r_i is pV times the input): reflection
+    r_i of the downgoing, -r_i of the upgoing, transmission 1 + r_i down and 1 - r_i up; the surface reflects the upgoing with -r_0.
+    The source is at the top of layer l: a downgoing spike 1, and an upgoing spike of -pV (in a surface source, only the first)."""
+    n = len(r) - 1
+    reff = [pV * v for v in r]
+    kk = min(k, n + 1)
+    down_before = np.zeros(n + 3)
+    up_now = np.zeros(n + 3)
+    field = []
+    for t in range(steps):
+        down = np.zeros(n + 3)
+        up_next = np.zeros(n + 3)
+        up_arriving = up_now.copy()
+        source_down = np.zeros(n + 3)
+        if t == 0:
+            source_down[l] = 1.0
+            if l > 1:
+                up_arriving[l] += -pV
+        down[1] = -reff[0] * up_arriving[1] + source_down[1]
+        for i in range(1, n + 1):
+            d_arriving = down_before[i]
+            u_arriving = up_arriving[i + 1]
+            down[i + 1] = (1 + reff[i]) * d_arriving - reff[i] * u_arriving + source_down[i + 1]
+            up_next[i] = reff[i] * d_arriving + (1 - reff[i]) * u_arriving
+        field.append(down[kk] + up_arriving[kk])
+        down_before = down
+        up_now = up_next
+    field = np.array(field)
+    if k > n + 1:  # the half-space: the wave of the last layer, delayed
+        delay = k - (n + 1)
+        delayed = np.zeros(steps)
+        delayed[delay:] = simulate_layers(r, l, n + 1, steps, pV)[:steps - delay]
+        return delayed
+    return field
+
+
+def run_goupillaud(r, **kwargs):
+    (trace,) = list(from_iterable([Trace(np.asarray(r, dtype=np.float32), d_sample=0.004)]) | goupillaud(**kwargs))
+    return trace
+
+
+def brute_force(r, l, k, pV, length):
+    x = simulate_layers(r, l, k, 2 * length + 2, pV)
+    return x[1::2][:length] if (k - l) % 2 else x[0::2][:length]
+
+
+@pytest.mark.parametrize('pV', [1, -1])
+@pytest.mark.parametrize('k', [1, 2, 3, 5, 7, 8, 11])  # (7 layers + the half-space: 8 and 11 are in the half-space)
+def test_goupillaud_surface_source_matches_a_simulation_of_the_layers(k, pV):
+    r = np.random.default_rng(4).uniform(-0.5, 0.5, size=7).astype(np.float32)
+    trace = run_goupillaud(r, l=1, k=k, pV=pV, tmax=16)
+    npt.assert_allclose(np.asarray(trace), brute_force(r.astype(np.float64), 1, k, pV, 16), atol=2e-6, rtol=1e-5)
+
+
+@pytest.mark.parametrize('pV', [1, -1])
+@pytest.mark.parametrize('l, k', [(2, 1), (4, 1), (4, 2), (4, 3), (7, 3), (7, 1), (7, 5)])
+def test_goupillaud_receiver_above_a_buried_source_matches_a_simulation_of_the_layers(l, k, pV):
+    r = np.random.default_rng(4).uniform(-0.5, 0.5, size=7).astype(np.float32)
+    trace = run_goupillaud(r, l=l, k=k, pV=pV, tmax=16)
+    npt.assert_allclose(np.asarray(trace), brute_force(r.astype(np.float64), l, k, pV, 16), atol=2e-6, rtol=1e-5)
+
+
+@pytest.mark.parametrize('pV', [1, -1])
+@pytest.mark.parametrize('l, k', [(1, 1), (1, 4), (3, 1), (5, 2)])
+def test_goupillaud_is_the_primaries_plus_the_multiples(l, k, pV):
+    # where the program is exact, the response is that of goupillaudpo (primaries) plus second order terms in the coefficients
+    base = np.random.default_rng(9).uniform(-1, 1, size=8)
+    gaps = []
+    for scale in (0.02, 0.002):
+        r = (scale * base).astype(np.float32)
+        (full,) = list(from_iterable([Trace(r, d_sample=0.004)]) | goupillaud(l=l, k=k, pV=pV, tmax=12))
+        (primaries,) = list(from_iterable([Trace(r, d_sample=0.004)]) | goupillaudpo(l=l, k=k, pV=pV, tmax=12))
+        gaps.append(np.abs(np.asarray(full, dtype=float) - np.asarray(primaries, dtype=float)).max())
+    assert gaps[0] / gaps[1] > 50  # (a second order difference falls by 100 when r falls by 10, a first order one by 10)
+
+
+def test_goupillaud_spike_to_the_first_primary():
+    (trace,) = list(from_iterable([Trace(np.array([0.0, 0.5, 0.0], dtype=np.float32), d_sample=0.004)]) | goupillaud(tmax=5))
+    x = np.asarray(trace)
+    assert x[0] == pytest.approx(1.0) and x[1] == pytest.approx(0.5)  # (the direct wave, and the reflection of the first interface)
+    assert trace.header['sample_start'] == 0.0 and trace.header['trace_type'] == 1
+
+
+def test_goupillaud_default_length_and_the_half_sample_shift():
+    r = np.random.default_rng(1).uniform(-0.3, 0.3, size=6).astype(np.float32)  # n = 5
+    assert run_goupillaud(r, l=1, k=1).n_sample == (2 * 5 + 2 - 0 - 0) // 2
+    assert run_goupillaud(r, l=1, k=4).n_sample == (2 * 5 + 2 - 0 - 3) // 2
+    assert run_goupillaud(r, l=1, k=9).n_sample == 9  # (a receiver below the layers: k)
+    odd = run_goupillaud(r, l=1, k=2, tmax=6)
+    even = run_goupillaud(r, l=1, k=3, tmax=6)
+    assert odd.header['sample_start'] == pytest.approx(0.002) and even.header['sample_start'] == 0.0
+
+
+@pytest.mark.parametrize('pV', [1, -1])
+@pytest.mark.parametrize('l, k', [(2, 2), (3, 3), (2, 4), (3, 6), (3, 5), (7, 7), (7, 12), (4, 4), (2, 9), (5, 8)])
+def test_goupillaud_receiver_at_or_below_a_buried_source_matches_a_simulation_of_the_layers(l, k, pV):
+    r = np.random.default_rng(4).uniform(-0.5, 0.5, size=7).astype(np.float32)
+    trace = run_goupillaud(r, l=l, k=k, pV=pV, tmax=16)
+    ref = brute_force(r.astype(np.float64), l, k, pV, 16)
+    if k == l:  # (just below and just above the source: the direct spikes 1 and -pV average)
+        ref[0] -= 0.5 * (1 - pV)
+    npt.assert_allclose(np.asarray(trace), ref, atol=2e-6, rtol=1e-5)
+
+
+@pytest.mark.parametrize('pV', [1, -1])
+def test_goupillaud_at_the_source_has_the_documented_start(pV):
+    r = np.random.default_rng(6).uniform(-0.3, 0.3, size=6).astype(np.float32)
+    x = np.asarray(run_goupillaud(r, l=3, k=3, pV=pV, tmax=6))
+    # the direct spikes 1 and -pV average to (1 - pV) / 2 (displacement 0, pressure 1); the reflection of the upgoing one
+    # from the interface above the source is there at once
+    assert x[0] == pytest.approx((1 - pV) / 2 + r[2], abs=1e-6)
+
+
+@pytest.mark.parametrize('pV', [1, -1])
+@pytest.mark.parametrize('l, k', [(3, 3), (3, 6), (2, 7), (5, 5)])
+def test_goupillaud_buried_source_is_consistent_with_the_primaries(l, k, pV):
+    base = np.random.default_rng(9).uniform(-1, 1, size=8)
+    gaps = []
+    for scale in (0.02, 0.002):
+        r = (scale * base).astype(np.float32)
+        (full,) = list(from_iterable([Trace(r, d_sample=0.004)]) | goupillaud(l=l, k=k, pV=pV, tmax=12))
+        (prim,) = list(from_iterable([Trace(r, d_sample=0.004)]) | goupillaudpo(l=l, k=k, pV=pV, tmax=12))
+        a, b = np.asarray(full, dtype=float), np.asarray(prim, dtype=float)
+        if k == l:
+            a = a[1:]; b = b[1:]  # (the direct spike is on its own)
+        gaps.append(np.abs(a - b).max())
+    assert gaps[0] / gaps[1] > 50
+
+
+def test_goupillaud_checks_its_parameters_and_input():
+    r = np.random.default_rng(3).uniform(-0.4, 0.4, size=6).astype(np.float32)
+    for bad in (dict(pV=0), dict(k=0), dict(l=0), dict(tmax=-1)):
+        with pytest.raises(ValueError):
+            goupillaud(**bad)
+    with pytest.raises(ValueError, match="l<=n\\+1"):
+        run_goupillaud(r, l=7)
+    with pytest.raises(ValueError, match="n must be >=1"):
+        run_goupillaud(np.array([0.3]))
+    with pytest.raises(ValueError, match="Invalid reflection coefficient"):
+        run_goupillaud(np.array([0.0, 1.5, 0.1]))
+    assert goupillaud().parallelism == 'trace'
+    # every trace is a reflectivity series that gets its seismogram, and the input is not changed
+    traces = [Trace(np.random.default_rng(s).uniform(-0.4, 0.4, size=6).astype(np.float32), d_sample=0.004) for s in range(3)]
+    before = [np.asarray(t).copy() for t in traces]
+    out = list(from_iterable(traces) | goupillaud(l=1, k=3))
+    assert len(out) == 3
+    for t, b in zip(traces, before):
+        npt.assert_array_equal(np.asarray(t), b)
