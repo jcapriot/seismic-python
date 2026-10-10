@@ -1,7 +1,7 @@
 from ._plane import plane
 from ._spike import spike
 from ._synlv import synlv, synlvcw, synlvfti
-from ._fd import fdmod1, fdmod1_snapshots, fdmod2, Snapshots
+from ._fd import fdmod1, fdmod1_snapshots, fdmod2, fdmod2_pml, ea2df, remac2d, remel2dan, fctanismod, Snapshots
 from ._kirchhoff import synvxz, synvxzcs, kdsyn2d
 from ._sources import null, randspike
 from ._patterns import nhmospike, addevent
