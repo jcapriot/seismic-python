@@ -368,6 +368,7 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.windowing.getgthr`, `sorty` | `sugetgthr`, `susorty` | the traces of the files of a directory (a source), a small shot data set that shows the geometry in the data, to look at sorting |
 | `seispy.synthetics.synvxz`, `synvxzcs` | `susynvxz`, `susynvxzcs` | Kirchhoff-style common-offset sections and common-shot gathers in a V(x,z) medium (the velocity, and the slowness perturbation of `synvxzcs`, are arrays `(nz, nx)`, not files): sources |
 | `seispy.synthetics.kdsyn2d` | `sukdsyn2d` | Kirchhoff demigration of a migrated section into common-shot gathers (the section and the traveltime tables are arrays, not files): a source |
+| `seispy.synthetics.fdmod1`, `fdmod1_snapshots`, `fdmod2` | `sufdmod1`, `sufdmod2` | finite-difference modelling of the acoustic wave equation: the model is an array, the seismograms are trace streams and the wavefield is `Snapshots` (an iterable of frames) |
 | `seispy.synthetics.imp2d`, `imp3d` | `suimp2d`, `suimp3d` | Born-integral shot records for a line scatterer (2-D) and a point scatterer (3-D, with the direct arrival if `dir=1`): sources |
 | `seispy.synthetics.syncz` | `susyncz` | zero-offset true-amplitude (2.5-D) data over dipping interfaces in constant-velocity layers: a source |
 | `seispy.synthetics.goupillaudpo` | `sugoupillaudpo` | primaries-only impulse response of a lossless Goupillaud medium, one seismogram for each reflectivity series |
@@ -393,7 +394,7 @@ arrays that the programs keep in `static` variables, filled in by the first trac
 is what lets the stages run in parallel (`tests/test_threads_c.py` checks that). The few places where the library versions
 differ from the programs, because the program is plainly wrong, are listed at the top of each source file.
 
-* **The program is the SU code:** `gain`, `bfilt`, `nmo`, `taupnmo`, `taup`, `velan`, `relan`, `imp2d`, `imp3d`, `syncz`, `goupillaudpo`, `goupillaud`, `addevent`, `resamp`, `hilb`, `analytic`, `synlv`, `synlvcw`, `synlvfti`, `synvxz`, `synvxzcs`, `kdsyn2d`, `centsamp`, `mute` (every mode),
+* **The program is the SU code:** `gain`, `bfilt`, `nmo`, `taupnmo`, `taup`, `velan`, `relan`, `imp2d`, `imp3d`, `syncz`, `goupillaudpo`, `goupillaud`, `addevent`, `resamp`, `hilb`, `analytic`, `synlv`, `synlvcw`, `synlvfti`, `synvxz`, `synvxzcs`, `kdsyn2d`, `fdmod1`, `fdmod2`, `centsamp`, `mute` (every mode),
   `taper`, `ramp`, the wavelets (`seispy.waveforms`) and the sweeps, `log`, `ilog`, `ttoz`, `ztot` and `tsq`, the attributes
   (`seispy.attributes`), `conv`, `acor`, `xcor` and `refcon` (the SU convolution and correlation), `pgc`, the stacks
   (`stack`, `divstack`, `pws`, `stackup`), and `median` and `medmix`. The random numbers of `addnoise`, `addflatnoise`, `jitter`

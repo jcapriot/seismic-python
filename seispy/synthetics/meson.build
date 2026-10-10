@@ -5,12 +5,14 @@ python_sources = [
     '_sources.py',
     '_patterns.py',
     '_layered.py',
+    '_fd.py',
     '_scatterers.py',
 ]
 
 cython_sources = [
     '_born.pyx',
     '_events.pyx',
+    '_fdmod.pyx',
     '_goupillaud.pyx',
     '_kirchhoff.pyx',
     '_plane.pyx',

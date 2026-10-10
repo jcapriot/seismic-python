@@ -924,6 +924,19 @@ cdef extern from "su.h" nogil:
                          const float *ttab, int ns, float fs, float ds, float *tsum, float *tt,
                          int nxt, float fxt, float dxt, int nzt, float fzt, float dzt,
                          int lhd, int nhd, float *hd)
+    int su_fdmod1_plan(const float *rv, int nz, float dz, float tmax, int nt_in, int styp, float freq,
+                       float *dt, int *nt, float *t0, int *ies)
+    int su_fdmod1_run(const float *rv, const float *rd, int nz, float dz, float dt, int nt, float t0, int ies,
+                      int isz, int irz, const int *abs, int styp, float freq, int td, int zd, int press,
+                      float *sismo, float *snaps)
+    void su_fdmod2_exsrc_setup(int ns, const float *xs, const float *zs, float *vs, float *xsd, float *zsd)
+    void su_fdmod2_ptsrc(float sstrength, float xs, float zs, int nx, float dx, float fx, int nz, float dz, float fz,
+                         float dt, float t, float fmax, float fpeak, int mono, float *s)
+    void su_fdmod2_exsrc(int ns, const float *xs, const float *zs, const float *vs, const float *xsd, const float *zsd,
+                         int nx, float dx, float fx, int nz, float dz, float fz,
+                         float dt, float t, float fpeak, int pwt, int mono, float *s)
+    void su_fdmod2_tstep(int nx, float dx, int nz, float dz, float dt, const float *dvv, const float *od, const float *s,
+                         const float *pm, const float *p, float *pp, const int *abs)
 
 cdef extern from "taup.h" nogil:
     # slant stacks (tau-p transforms), from par/lib/taup.c
