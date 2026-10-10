@@ -885,7 +885,45 @@ cdef extern from "su.h" nogil:
                   float v00, float dvdx, float dvdz,
                   int ls, int er, int ob, Wavelet *w, int nr, Reflector *r, int lhd, int nhd, float *hd
               );
-
+    void su_synlvcw(float *data,
+                    float xs, float zs, float xg, float zg,
+                    size_t nt, float dt, float ft,
+                    float v00, float dvdx, float dvdz, float gamma,
+                    int ls, int er, int ob, int sp,
+                    Wavelet *w, int nr, Reflector *r, int lhd, int nhd, float *hd
+                )
+    void su_synlvfti(float *trace, float v00, float dvdx, float dvdz,
+                     int ls, int er, int ob, Wavelet *w, int trans,
+                     int nitmax, float epst, int zeroff,
+                     int ntries, float epsx, float angxs,
+                     float xs, float zs, float xg, float zg,
+                     float a, float f, float l,
+                     int nr, Reflector *r, int nt, float dt, float ft,
+                     int lhd, int nhd, float *hd
+                 )
+    int su_synvxz_offset(const float *vel, int nx, int nz, float dx, float dz, float fx,
+                         int nxb, int nxd, float xo, int nxm, float dxm, float fxm,
+                         int ls, Wavelet *w, int nr, Reflector *r, int nt, float dt, float ft,
+                         int lhd, int nhd, float *hd, float *out
+                     )
+    int su_synvxzcs_shot(const float *vel, const float *pert, int nx, int nz, float dx, float dz, float fx,
+                         int nxb, int nxd, int nxc, int nzc, float xs, int nxg, float dxg, float gx0,
+                         int ls, Wavelet *w, int nr, Reflector *r, int nt, float dt, float ft,
+                         int lhd, int nhd, float *hd, float *out
+                     )
+    void su_kdsyn2d_reference(int nr, int nzt, float dr, float dzt, float fzt, float dvz, float v0,
+                              float *tb, float *pb, float *sigb, float *cosb)
+    void su_kdsyn2d_residual(int ns, float fs, float ds, int nxt, float fxt, float dxt, int nzt, int nr, float dr,
+                             const float *tb, float *ttab)
+    void su_kdsyn2d_integrate(const float *mig, int nz, float dz, int nx, int m, float *migi)
+    int su_kdsyn2d_trace(float *trace, int nt, float ft, float dt, float xs, float xg,
+                         const float *mig, const float *migi, float aperx,
+                         int nx, float fx, float dx, int nz, float fz, float dz,
+                         int mzmax, int ls, float angmax, float v0, float fmax, Wavelet *w,
+                         const float *tb, const float *pb, const float *sigb, const float *cosb, int nr,
+                         const float *ttab, int ns, float fs, float ds, float *tsum, float *tt,
+                         int nxt, float fxt, float dxt, int nzt, float fzt, float dzt,
+                         int lhd, int nhd, float *hd)
 
 cdef extern from "taup.h" nogil:
     # slant stacks (tau-p transforms), from par/lib/taup.c

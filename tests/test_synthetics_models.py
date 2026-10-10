@@ -8,7 +8,7 @@ import numpy.testing as npt
 import pytest
 
 from seispy.container import Trace, from_iterable
-from seispy.synthetics import _born, _events, addevent, goupillaud, goupillaudpo, imp2d, imp3d, nhmospike, syncz
+from seispy.synthetics import _born, _events, addevent, goupillaud, goupillaudpo, imp2d, imp3d, nhmospike, syncz, synlv, synlvcw, synlvfti, synvxz, synvxzcs, kdsyn2d
 
 
 def samples(traces):
@@ -541,6 +541,11 @@ def test_the_models_can_be_made_by_several_threads_at_once():
         'imp3d': lambda: samples(imp3d(nshot=2, nrec=3, nt=200, dir=1, gxmin=50.0, dgx=70.0)),
         'syncz': lambda: samples(syncz(ntr=8, nt=200)),
         'goupillaudpo': lambda: samples(from_iterable(reflectivity_traces()) | goupillaudpo(l=3, k=9)),
+        'synlvcw': lambda: samples(synlvcw(nt=101, nxm=4, nxo=3, dxo=0.2, gamma=0.7)),
+        'synlvfti': lambda: samples(synlvfti(nt=101, nxm=3, nxo=3, dxo=0.3, fxo=0.1, delta=0.2, epsilon=0.2)),
+        'synvxz': lambda: samples(synvxz(VXZ_V, **VXZ)),
+        'synvxzcs': lambda: samples(synvxzcs(VXZ_V, **VXZCS)),
+        'kdsyn2d': lambda: samples(kdsyn2d(KD_MIG, KD_TTAB, **KD)),
         'goupillaud': lambda: samples(from_iterable(reflectivity_traces()) | goupillaud(l=1, k=6)),
         'addevent': lambda: samples(from_iterable(gather([0.0, 300.0, 600.0])) | addevent(t0=0.2, vel=2000.0)),
     }
@@ -702,3 +707,273 @@ def test_goupillaud_checks_its_parameters_and_input():
     assert len(out) == 3
     for t, b in zip(traces, before):
         npt.assert_array_equal(np.asarray(t), b)
+
+
+# ------------------------------------------------------------------------------------------------------- synlvcw
+FLAT = dict(nt=401, dt=0.004, nxm=1, nxo=1, dxm=0.1, v00=2.0, reflectors=[[1.0, (-5.0, 1.0), (5.0, 1.0)]], ls=True)
+
+
+def test_synlvcw_with_gamma_one_is_synlv():
+    kwargs = dict(nt=101, nxm=4, nxo=3, dxo=0.2)
+    npt.assert_array_equal(samples(synlvcw(**kwargs)), samples(synlv(**kwargs)))
+    npt.assert_array_equal(samples(synlvcw(gamma=1.0, **kwargs)), samples(synlv(**kwargs)))
+
+
+@pytest.mark.parametrize('gamma', [0.5, 1.0, 2.0])
+def test_synlvcw_zero_offset_time_is_down_at_v_and_up_at_gamma_v(gamma):
+    # a flat reflector at 1 km in v = 2 km/s: down in 0.5 s, up in 0.5 / gamma s
+    x = np.asarray(next(iter(synlvcw(gamma=gamma, **FLAT))))
+    expected = 0.5 + 0.5 / gamma
+    if expected >= 400 * 0.004:
+        pytest.skip("beyond the record")
+    assert abs(np.argmax(np.abs(x)) * 0.004 - expected) < 0.016
+
+
+def test_synlvcw_amplitudes_change_with_gamma_and_sp():
+    base = samples(synlvcw(**FLAT))
+    assert not np.allclose(base, samples(synlvcw(gamma=0.8, **FLAT)))
+    flat_amp = samples(synlvcw(sp=False, **FLAT))
+    assert np.isfinite(flat_amp).all() and np.abs(flat_amp).max() > 0
+    assert not np.allclose(flat_amp / np.abs(flat_amp).max(), base / np.abs(base).max())
+
+
+def test_synlvcw_rejects_a_bad_gamma():
+    with pytest.raises(ValueError, match="gamma"):
+        synlvcw(gamma=0.0)
+
+
+# ------------------------------------------------------------------------------------------------------- synlvfti
+DIPPING = [[1.0, (-3.0, 0.8), (3.0, 1.0)]]
+
+
+@pytest.mark.parametrize('extra', [{}, dict(dvdz=0.5), dict(dvdx=0.2)])
+@pytest.mark.parametrize('nxo, fxo', [(4, 0.1), (1, 0.0)])
+def test_synlvfti_of_an_isotropic_medium_is_synlv(extra, nxo, fxo):
+    kwargs = dict(nt=401, dt=0.004, nxm=3, nxo=nxo, dxo=0.3, fxo=fxo, v00=2.0, reflectors=DIPPING, ob=True, **extra)
+    npt.assert_array_equal(samples(synlvfti(**kwargs)), samples(synlv(**kwargs)))
+
+
+def test_synlvfti_does_not_use_the_obliquity_factors_unless_asked():
+    kwargs = dict(nt=401, dt=0.004, nxm=2, nxo=3, dxo=0.3, fxo=0.1, reflectors=DIPPING)
+    npt.assert_array_equal(samples(synlvfti(**kwargs)), samples(synlv(ob=False, **kwargs)))
+    assert not np.array_equal(samples(synlvfti(ob=True, **kwargs)), samples(synlvfti(**kwargs)))
+
+
+@pytest.mark.parametrize('eps', [0.1, 0.2, -0.1])
+def test_synlvfti_elliptical_medium_has_the_hyperbolic_moveout_of_the_nmo_velocity(eps):
+    # delta = epsilon: a flat reflector at 1 km in a v = 2 km/s medium has t^2 = t0^2 + x^2 / (v^2 (1 + 2 delta))
+    offsets = np.array([0.0, 0.4, 0.8, 1.2, 1.6])
+    traces = samples(synlvfti(nt=401, dt=0.004, nxm=1, xo=offsets, v00=2.0, ls=True, delta=eps, epsilon=eps,
+                              reflectors=[[1.0, (-8.0, 1.0), (8.0, 1.0)]]))
+    got = np.abs(traces).argmax(axis=1)
+    expected = np.round(np.sqrt(1.0 + (offsets / (2.0 * math.sqrt(1 + 2 * eps))) ** 2) / 0.004)
+    npt.assert_allclose(got, expected, atol=1)
+
+
+def test_synlvfti_a_f_l_and_thomsens_parameters_are_the_same_medium():
+    kwargs = dict(nt=401, dt=0.004, nxm=1, xo=[0.0, 0.8], v00=2.0, ls=True, reflectors=[[1.0, (-8.0, 1.0), (8.0, 1.0)]])
+    eps, delta, l = 0.2, 0.1, 0.3
+    a = 1 + 2 * eps
+    f = math.sqrt(2 * delta * (1 - l) + (1 - l) ** 2) - l
+    npt.assert_allclose(samples(synlvfti(a=a, f=f, l=l, **kwargs)), samples(synlvfti(delta=delta, epsilon=eps, **kwargs)), atol=1e-4)
+
+
+def test_synlvfti_the_symmetry_axis_matters():
+    kwargs = dict(nt=401, dt=0.004, nxm=1, xo=[0.0, 0.8, 1.2], v00=2.0, ls=True, epsilon=0.2, delta=0.2,
+                  reflectors=[[1.0, (-8.0, 1.0), (8.0, 1.0)]])
+    assert not np.allclose(samples(synlvfti(angxs=30.0, **kwargs)), samples(synlvfti(**kwargs)), atol=1e-3)
+    base = samples(synlvfti(**kwargs))  # (the rotation by half a turn is done in single precision and the ray search stops at epsx)
+    npt.assert_allclose(samples(synlvfti(angxs=180.0, **kwargs)), base, atol=0.01 * np.abs(base).max())
+
+
+def test_synlvfti_rejects_bad_iteration_counts():
+    with pytest.raises(ValueError):
+        synlvfti(ntries=0)
+    with pytest.raises(ValueError):
+        synlvfti(nitmax=0)
+
+
+# -------------------------------------------------------------------------------------------------------- synvxz
+VXZ_V = np.full((60, 80), 2000.0, dtype=np.float32)  # (nz, nx), on a 25 m grid: 2 km deep and wide
+VXZ = dict(dx=25.0, dz=25.0, nt=401, dt=0.004, nxo=3, dxo=100.0, nxm=7, dxm=50.0, fxm=500.0, ls=True,
+           reflectors=[[1.0, (0.0, 1000.0), (2000.0, 1000.0)]])
+
+
+def test_synvxz_traveltimes_in_constant_velocity_are_the_hyperbola():
+    traces = samples(synvxz(VXZ_V, **VXZ)).reshape(3, 7, -1)
+    for io, xo in enumerate((0.0, 100.0, 200.0)):
+        expected = math.sqrt(1.0 + (xo / 2000.0) ** 2) / 0.004  # (a flat reflector 1 km deep, v = 2 km/s)
+        got = np.abs(traces[io]).argmax(axis=1)
+        npt.assert_allclose(got, expected, atol=1.5)
+
+
+def test_synvxz_order_and_headers():
+    stream = synvxz(VXZ_V, **VXZ)
+    assert stream.n_traces == 21
+    traces = list(stream)
+    assert len(traces) == 21
+    # (each offset in turn, with its midpoints)
+    assert [t.header['ensemble_number'] for t in traces[:8]] == [1, 2, 3, 4, 5, 6, 7, 1]
+    assert [t.header['ensemble_trace_number'] for t in traces[::7]] == [1, 2, 3]
+    t = traces[8]  # the second midpoint, the offset 100
+    assert t.header['tx_loc'][0] == pytest.approx(550.0 - 50.0) and t.header['rx_loc'][0] == pytest.approx(550.0 + 50.0)
+    assert t.header['d_sample'] == pytest.approx(0.004) and t.n_sample == 401
+
+
+def test_synvxz_skipping_midpoints_interpolates_the_traveltimes():
+    full = samples(synvxz(VXZ_V, **VXZ))
+    skipped = samples(synvxz(VXZ_V, nxd=3, **VXZ))
+    assert np.abs(full - skipped).max() < 0.01 * np.abs(full).max()
+
+
+def test_synvxz_agrees_with_synlv_in_a_constant_velocity():
+    # the same medium in km (synlv takes the midpoint outermost, and has other units of amplitude)
+    vxz = samples(synvxz(VXZ_V, **VXZ))
+    lv = samples(synlv(nt=401, dt=0.004, nxm=7, dxm=0.05, fxm=0.5, nxo=3, dxo=0.1, v00=2.0, ls=True, ob=True,
+                       reflectors=[[1.0, (0.0, 1.0), (2.0, 1.0)]]))
+    for io in range(3):
+        for im in range(7):
+            a, b = vxz[io * 7 + im], lv[im * 3 + io]
+            assert np.corrcoef(a, b)[0, 1] > 0.99
+            assert a.max() / b.max() == pytest.approx(0.5, rel=0.15)  # (the same, in other units)
+
+
+def test_synvxz_deeper_reflector_comes_later_and_faster_medium_earlier():
+    slow = np.asarray(next(iter(synvxz(VXZ_V, **{**VXZ, 'nxo': 1, 'nxm': 1, 'reflectors': [[1.0, (0.0, 600.0), (2000.0, 600.0)]]}))))
+    fast_v = np.full((60, 80), 3000.0, dtype=np.float32)
+    fast = np.asarray(next(iter(synvxz(fast_v, **{**VXZ, 'nxo': 1, 'nxm': 1, 'reflectors': [[1.0, (0.0, 600.0), (2000.0, 600.0)]]}))))
+    assert np.abs(slow).argmax() * 0.004 == pytest.approx(0.6, abs=0.012)
+    assert np.abs(fast).argmax() * 0.004 == pytest.approx(0.4, abs=0.012)
+
+
+def test_synvxz_checks_its_input():
+    with pytest.raises(ValueError, match="outside"):
+        synvxz(VXZ_V, **{**VXZ, 'fxm': -500.0})
+    with pytest.raises(ValueError, match="band"):
+        synvxz(VXZ_V, **{**VXZ, 'nxb': 2})
+    with pytest.raises(ValueError, match="2-D"):
+        synvxz(np.zeros(5))
+    with pytest.raises(ValueError):
+        synvxz(VXZ_V, nxd=0)
+
+
+# ------------------------------------------------------------------------------------------------------ synvxzcs
+VXZCS = dict(dx=25.0, dz=25.0, nt=401, dt=0.004, nxg=9, dxg=100.0, fxg=0.0, nxs=2, dxs=100.0, fxs=600.0, nxb=30, nxd=3, ls=True,
+             reflectors=[[1.0, (0.0, 1000.0), (2000.0, 1000.0)]])
+
+
+def test_synvxzcs_traveltimes_in_constant_velocity_are_the_hyperbola():
+    traces = samples(synvxzcs(VXZ_V, **VXZCS)).reshape(2, 9, -1)
+    for ishot, xs in enumerate((600.0, 700.0)):
+        offsets = np.arange(9) * 100.0 - xs  # (the spread rolls with the shot, so that the receivers are at 0 .. 800 + 100 ishot)
+        offsets = np.arange(9) * 100.0 + 100.0 * ishot - xs
+        expected = np.sqrt(1.0 + (offsets / 2000.0) ** 2) / 0.004
+        npt.assert_allclose(np.abs(traces[ishot]).argmax(axis=1), expected, atol=1.5)
+
+
+def test_synvxzcs_order_and_headers():
+    stream = synvxzcs(VXZ_V, **VXZCS)
+    assert stream.n_traces == 18
+    traces = list(stream)
+    assert len(traces) == 18
+    assert [t.header['ensemble_number'] for t in traces[::9]] == [1, 2]
+    assert [t.header['ensemble_trace_number'] for t in traces[:9]] == list(range(1, 10))
+    assert traces[9].header['tx_loc'][0] == pytest.approx(700.0) and traces[9].header['rx_loc'][0] == pytest.approx(100.0)
+    fixed = list(synvxzcs(VXZ_V, cable=False, **VXZCS))
+    assert fixed[9].header['rx_loc'][0] == pytest.approx(0.0)  # (the receivers do not roll along)
+
+
+def test_synvxzcs_skipping_receivers_interpolates_the_traveltimes():
+    full = samples(synvxzcs(VXZ_V, **{**VXZCS, 'nxd': 1}))
+    skipped = samples(synvxzcs(VXZ_V, **VXZCS))
+    assert np.abs(full - skipped).max() < 0.02 * np.abs(full).max()
+
+
+def test_synvxzcs_is_synvxz_with_the_same_shots_and_receivers():
+    # in a constant velocity a shot and a receiver are the offset and the midpoint of a common-offset trace
+    cs = samples(synvxzcs(VXZ_V, **{**VXZCS, 'nxs': 1, 'nxd': 1, 'nxb': 40}))
+    xs = 600.0
+    for ig, xg in enumerate(np.arange(9) * 100.0):
+        xo, xm = xg - xs, 0.5 * (xg + xs)
+        co = samples(synvxz(VXZ_V, dx=25.0, dz=25.0, nt=401, dt=0.004, xo=[xo], nxm=1, fxm=xm, ls=True,
+                            reflectors=VXZCS['reflectors']))[0]
+        assert np.corrcoef(cs[ig], co)[0, 1] > 0.99
+        assert cs[ig].max() / co.max() == pytest.approx(1.0, rel=0.1)
+
+
+def test_synvxzcs_zero_perturbation_and_corners_leave_a_constant_medium_alone():
+    base = samples(synvxzcs(VXZ_V, **VXZCS))
+    npt.assert_allclose(samples(synvxzcs(VXZ_V, pert=np.zeros_like(VXZ_V), **VXZCS)), base, atol=1e-5 * np.abs(base).max())
+    npt.assert_allclose(samples(synvxzcs(VXZ_V, nxc=4, nzc=3, **VXZCS)), base, atol=1e-5 * np.abs(base).max())
+
+
+def test_synvxzcs_perturbation_of_the_slowness_changes_the_traveltimes():
+    pert = np.full_like(VXZ_V, 2.0e-5)
+    changed = samples(synvxzcs(VXZ_V, pert=pert, **VXZCS))
+    base = samples(synvxzcs(VXZ_V, **VXZCS))
+    assert not np.allclose(changed, base, atol=1e-3 * np.abs(base).max())
+
+
+def test_synvxzcs_checks_its_input():
+    with pytest.raises(ValueError, match="shot"):
+        synvxzcs(VXZ_V, **{**VXZCS, 'fxs': -100.0})
+    with pytest.raises(ValueError, match="receiver"):
+        synvxzcs(VXZ_V, **{**VXZCS, 'nxg': 40})
+    with pytest.raises(ValueError, match="shape"):
+        synvxzcs(VXZ_V, pert=np.zeros((3, 3)), **VXZCS)
+    with pytest.raises(ValueError):
+        synvxzcs(VXZ_V, **{**VXZCS, 'nxs': 0})
+
+
+# ------------------------------------------------------------------------------------------------------- kdsyn2d
+KD_V = 2000.0
+_x = np.arange(101) * 25.0
+_z = np.arange(81) * 25.0
+_srcs = np.arange(26) * 100.0
+KD_TTAB = (np.sqrt((_x[None, None, :] - _srcs[:, None, None]) ** 2 + _z[None, :, None] ** 2) / KD_V).astype(np.float32)  # (ns, nzt, nxt)
+KD_MIG = np.zeros((81, 101), dtype=np.float32)
+KD_MIG[40, :] = 1.0  # a flat reflector at z = 1000
+KD = dict(dx=25.0, dz=25.0, dxt=25.0, dzt=25.0, fs=0.0, ds=100.0, nt=501, dt=0.004, nxo=3, dxo=200.0, fxo=0.0, nxs=3, dxs=300.0,
+          fxs=600.0, v0=KD_V)
+
+
+def test_kdsyn2d_reflector_arrives_at_the_specular_time():
+    traces = list(kdsyn2d(KD_MIG, KD_TTAB, **KD))
+    assert len(traces) == 9
+    for tr in traces:
+        xo = tr.header['rx_loc'][0] - tr.header['tx_loc'][0]
+        expected = math.sqrt(xo ** 2 + 4 * 1000.0 ** 2) / KD_V
+        assert np.abs(np.asarray(tr)).argmax() * 0.004 == pytest.approx(expected, abs=0.006)
+
+
+def test_kdsyn2d_order_headers_and_the_shot_gathers_of_a_flat_section_are_alike():
+    stream = kdsyn2d(KD_MIG, KD_TTAB, **KD)
+    assert stream.n_traces == 9
+    traces = list(stream)
+    assert [t.header['ensemble_number'] for t in traces[::3]] == [1, 2, 3]
+    assert [t.header['ensemble_trace_number'] for t in traces[:3]] == [1, 2, 3]
+    assert [t.header['tx_loc'][0] for t in traces[::3]] == [600.0, 900.0, 1200.0]
+    assert [t.header['rx_loc'][0] for t in traces[:3]] == [600.0, 800.0, 1000.0]
+    x = samples(traces).reshape(3, 3, -1)
+    # (a flat reflector in a constant velocity: the reflection is the same for every shot; the edges of the section are not)
+    npt.assert_allclose(x[1][:, 230:290], x[2][:, 230:290], atol=0.02 * np.abs(x).max())
+
+
+def test_kdsyn2d_is_linear_in_the_section_and_a_zero_section_gives_zero():
+    base = samples(kdsyn2d(KD_MIG, KD_TTAB, **KD))
+    npt.assert_allclose(samples(kdsyn2d(3.0 * KD_MIG, KD_TTAB, **KD)), 3.0 * base, rtol=1e-4, atol=1e-5 * np.abs(base).max())
+    assert not np.any(samples(kdsyn2d(np.zeros_like(KD_MIG), KD_TTAB, **KD)))
+    npt.assert_array_equal(samples(kdsyn2d(KD_MIG, KD_TTAB, **KD)), base)  # (the inputs are not changed, and it is repeatable)
+
+
+def test_kdsyn2d_checks_its_input():
+    with pytest.raises(ValueError, match="3-D"):
+        kdsyn2d(KD_MIG, KD_TTAB[0], **KD)
+    with pytest.raises(ValueError, match="two sources"):
+        kdsyn2d(KD_MIG, KD_TTAB[:1], **KD)
+    with pytest.raises(ValueError, match="outside"):
+        kdsyn2d(KD_MIG, KD_TTAB, **{**KD, 'fxs': 2600.0})
+    with pytest.raises(ValueError, match="traveltime table"):
+        kdsyn2d(KD_MIG, KD_TTAB, **{**KD, 'fx': 100.0})
+    with pytest.raises(ValueError, match="angmax"):
+        kdsyn2d(KD_MIG, KD_TTAB, **{**KD, 'angmax': 0.0})

@@ -12,6 +12,7 @@ cython_sources = [
     '_born.pyx',
     '_events.pyx',
     '_goupillaud.pyx',
+    '_kirchhoff.pyx',
     '_plane.pyx',
     '_syncz.pyx',
     '_spike.pyx',

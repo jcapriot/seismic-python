@@ -327,7 +327,7 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 
 | seispy | SU | |
 |---|---|---|
-| `seispy.synthetics.spike`, `plane`, `synlv` | `suspike`, `suplane`, `susynlv` | sources |
+| `seispy.synthetics.spike`, `plane`, `synlv`, `synlvcw`, `synlvfti` | `suspike`, `suplane`, `susynlv`, `susynlvcw`, `susynlvfti` | sources (`synlvcw` adds the mode conversion `gamma`, `synlvfti` a transversely isotropic medium) |
 | `seispy.filters.bfilt` | `subfilt` | Butterworth filters |
 | `seispy.filters.filter` | `sufilter` | zero-phase, tapered polygonal filter |
 | `seispy.amplitudes.gain` | `sugain` | tpow, epow, gpow, agc, clipping, balancing, ... |
@@ -366,6 +366,8 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.velocity.velan`, `relan` | `suvelan`, `surelan` | stacking velocity semblance of CDP gathers, residual moveout semblance of migrated gathers: one semblance trace per velocity (or r parameter) for each gather (`ensemble_trace_number` counts them) |
 | `seispy.windowing.split`, `cleave`, `putgthr` | `susplit`, `sucleave`, `suputgthr` | write the traces that go through them to files, by the value of a header word, by ranges of it, or a file for each gather (in seispy's own format, `.spy`) |
 | `seispy.windowing.getgthr`, `sorty` | `sugetgthr`, `susorty` | the traces of the files of a directory (a source), a small shot data set that shows the geometry in the data, to look at sorting |
+| `seispy.synthetics.synvxz`, `synvxzcs` | `susynvxz`, `susynvxzcs` | Kirchhoff-style common-offset sections and common-shot gathers in a V(x,z) medium (the velocity, and the slowness perturbation of `synvxzcs`, are arrays `(nz, nx)`, not files): sources |
+| `seispy.synthetics.kdsyn2d` | `sukdsyn2d` | Kirchhoff demigration of a migrated section into common-shot gathers (the section and the traveltime tables are arrays, not files): a source |
 | `seispy.synthetics.imp2d`, `imp3d` | `suimp2d`, `suimp3d` | Born-integral shot records for a line scatterer (2-D) and a point scatterer (3-D, with the direct arrival if `dir=1`): sources |
 | `seispy.synthetics.syncz` | `susyncz` | zero-offset true-amplitude (2.5-D) data over dipping interfaces in constant-velocity layers: a source |
 | `seispy.synthetics.goupillaudpo` | `sugoupillaudpo` | primaries-only impulse response of a lossless Goupillaud medium, one seismogram for each reflectivity series |
@@ -391,7 +393,7 @@ arrays that the programs keep in `static` variables, filled in by the first trac
 is what lets the stages run in parallel (`tests/test_threads_c.py` checks that). The few places where the library versions
 differ from the programs, because the program is plainly wrong, are listed at the top of each source file.
 
-* **The program is the SU code:** `gain`, `bfilt`, `nmo`, `taupnmo`, `taup`, `velan`, `relan`, `imp2d`, `imp3d`, `syncz`, `goupillaudpo`, `goupillaud`, `addevent`, `resamp`, `hilb`, `analytic`, `synlv`, `centsamp`, `mute` (every mode),
+* **The program is the SU code:** `gain`, `bfilt`, `nmo`, `taupnmo`, `taup`, `velan`, `relan`, `imp2d`, `imp3d`, `syncz`, `goupillaudpo`, `goupillaud`, `addevent`, `resamp`, `hilb`, `analytic`, `synlv`, `synlvcw`, `synlvfti`, `synvxz`, `synvxzcs`, `kdsyn2d`, `centsamp`, `mute` (every mode),
   `taper`, `ramp`, the wavelets (`seispy.waveforms`) and the sweeps, `log`, `ilog`, `ttoz`, `ztot` and `tsq`, the attributes
   (`seispy.attributes`), `conv`, `acor`, `xcor` and `refcon` (the SU convolution and correlation), `pgc`, the stacks
   (`stack`, `divstack`, `pws`, `stackup`), and `median` and `medmix`. The random numbers of `addnoise`, `addflatnoise`, `jitter`

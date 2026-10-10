@@ -20,7 +20,10 @@ _make_the_table()
 
 cdef class synlv(spyc.BaseTraceIterator):
     cdef:
-        bint shots, ls, er, ob
+        bint shots, ls, er, ob, sp, cw, fti, trans, zeroff
+        float gamma
+        int nitmax, ntries
+        float epst, epsx, angxs, ta, tf, tl
         int ns, nr, nxo, nt
 
         float v00, dvdx, dvdz, ft, dt
@@ -61,6 +64,11 @@ cdef class synlv(spyc.BaseTraceIterator):
             bint smooth=False, bint er=False, bint ls=False, int ob=True,
             tmin=None, int ndpfz=5, bint verbose=False,
     ):
+        # (synlvcw, below, is this with the mode conversion gamma, and the amplitude spreading that can be left out)
+        self.cw = False
+        self.fti = False
+        self.gamma = 1.0
+        self.sp = True
 
         if tmin is None:
             tmin = 10.0 * dt
@@ -97,7 +105,7 @@ cdef class synlv(spyc.BaseTraceIterator):
             for ixo in range(nxo):
                 self.xo[ixo] = fxo + ixo * dxo
         else:
-            self.xo = np.require(xo, dtype=np.float32, flags='C')
+            self.xo = np.require(xo, dtype=np.float32, requirements='C')
         self.nxo = self.xo.shape[0]
 
         self.ref_points = np.empty(self.ns, dtype=np.float32)
@@ -109,7 +117,7 @@ cdef class synlv(spyc.BaseTraceIterator):
                 self.ref_points[ixsm] = fxm + ixsm * dxm  # are actually the midpoints
 
         if reflectors is None:
-            reflectors = [[1, (1, 4), (2, 2)]]
+            reflectors = [[1.0, (1.0, 2.0), (4.0, 2.0)]]  # (SU's ref="1:1,2;4,2")
         # decode reflectors
         self.nr = len(reflectors)
         cdef:
@@ -204,16 +212,40 @@ cdef class synlv(spyc.BaseTraceIterator):
 
         cdef float[::1] data = spyc.alloc_data(self.nt)
         # (su_synlv only reads what it is given, and the sinc table of addsinc is made when this module is imported)
-        with nogil:
-            su.su_synlv(
-                &data[0],
-                xs, z, xr, z,
-                self.nt, self.dt, self.ft,
-                self.v00, self.dvdx, self.dvdz,
-                self.ls, self.er, self.ob,
-                self.w, self.nr, self.r,
-                self.lhd, self.nhd, self.hd_filt
-            )
+        if self.fti:
+            with nogil:
+                su.su_synlvfti(
+                    &data[0], self.v00, self.dvdx, self.dvdz,
+                    self.ls, self.er, self.ob, self.w, self.trans,
+                    self.nitmax, self.epst, self.zeroff,
+                    self.ntries, self.epsx, self.angxs,
+                    xs, z, xr, z,
+                    self.ta, self.tf, self.tl,
+                    self.nr, self.r, self.nt, self.dt, self.ft,
+                    self.lhd, self.nhd, self.hd_filt
+                )
+        elif self.cw:
+            with nogil:
+                su.su_synlvcw(
+                    &data[0],
+                    xs, z, xr, z,
+                    self.nt, self.dt, self.ft,
+                    self.v00, self.dvdx, self.dvdz, self.gamma,
+                    self.ls, self.er, self.ob, self.sp,
+                    self.w, self.nr, self.r,
+                    self.lhd, self.nhd, self.hd_filt
+                )
+        else:
+            with nogil:
+                su.su_synlv(
+                    &data[0],
+                    xs, z, xr, z,
+                    self.nt, self.dt, self.ft,
+                    self.v00, self.dvdx, self.dvdz,
+                    self.ls, self.er, self.ob,
+                    self.w, self.nr, self.r,
+                    self.lhd, self.nhd, self.hd_filt
+                )
 
         cdef spyc.spy_trace_header * hdr = spyc.new_hdr(self.nt)
 
@@ -235,3 +267,56 @@ cdef class synlv(spyc.BaseTraceIterator):
             self.ixo = 0
             self.ixsm += 1
         return spyc.Trace.from_trace(hdr, data,True)
+
+
+cdef class synlvcw(synlv):
+    """SUSYNLVCW: synthetic seismograms for a linear velocity function, for converted waves.
+
+    The parameters are those of synlv, with two more: ``gamma``, the velocity ratio upgoing/downgoing (gamma < 1 is P-SV
+    conversion, gamma > 1 SV-P, gamma = 1 none, which is synlv), and ``sp``, to account for the amplitude spreading (if false
+    the amplitudes are 1/sqrt(time) throughout, for looking at the traveltimes).
+    """
+    def __init__(self, *args, float gamma=1.0, bint sp=True, **kwargs):
+        synlv.__init__(self, *args, **kwargs)
+        if gamma <= 0:
+            raise ValueError("gamma must be positive")
+        self.cw = True
+        self.gamma = gamma
+        self.sp = sp
+
+
+cdef class synlvfti(synlv):
+    """SUSYNLVFTI: synthetic seismograms for a linear velocity function in a factorized transversely isotropic medium.
+
+    The parameters are those of synlv (but ``ob`` is false unless asked for), with those of the anisotropy: ``angxs``, the angle
+    of the symmetry axis with the vertical (degrees), and either the ratios of the elastic coefficients ``a`` (c1111/c3333), ``f``
+    (c1133/c3333) and ``l`` (c1313/c3333), or Thomsen's ``delta`` and ``epsilon`` (the difference should not exceed one, and both
+    are best kept between -2 and 2), which are used if either is not zero. ``ntries`` is the number of iterations of the searches of
+    the ray (the documented 40 is the default; the program has 20), ``epsx`` the lateral offset tolerance, ``epst`` the tolerance
+    and ``nitmax`` the largest number of iterations of the traveltime integrations. The medium is isotropic, and the ray tracing
+    that of synlv, if a = 1 and f + 2 l = 1 and delta and epsilon are 0.
+    """
+    def __init__(self, *args, float angxs=0.0, float a=1.0, float f=0.4, float l=0.3, float delta=0.0, float epsilon=0.0,
+                 int ntries=40, float epsx=0.001, float epst=0.0001, int nitmax=12, **kwargs):
+        kwargs.setdefault('ob', False)
+        synlv.__init__(self, *args, **kwargs)
+        if ntries < 1 or nitmax < 1:
+            raise ValueError("ntries and nitmax must be at least 1")
+        # (in single precision, as the program does it: 0.4 + 2 * 0.3 is 1 there)
+        cdef bint trans = a != 1 or np.float32(f) + np.float32(2) * np.float32(l) != 1
+        if delta != 0 or epsilon != 0:
+            a = 1 + 2 * epsilon
+            f = sqrtf(2 * delta * (1 - l) + (1 - l) * (1 - l)) - l
+            trans = True
+        self.fti = True
+        self.trans = trans
+        self.ta = a
+        self.tf = f
+        self.tl = l
+        self.angxs = angxs * 3.14159265358979323846 / 180.0
+        self.ntries = ntries
+        self.nitmax = nitmax
+        self.epsx = epsx
+        self.epst = epst
+        # (the program says it is zero offset if there is one offset and the first is 0)
+        self.zeroff = self.nxo == 1 and self.xo[0] == 0.0
