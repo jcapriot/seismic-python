@@ -231,7 +231,7 @@ cdef extern from "cwp.h" nogil:
     int npfa(int nmin)
     # int npfao(int nmin, int nmax)
     int npfar(int nmin)
-    # int npfaro(int nmin, int nmax)
+    int npfaro(int nmin, int nmax)
     # void pfacc(int isign, int n, complex z[])
     # void pfarc(int isign, int n, float rz[], complex cz[])
     # void pfacr(int isign, int n, complex cz[], float rz[])
@@ -848,6 +848,23 @@ cdef extern from "su.h" nogil:
     void su_taupnmo(float *data, int nt, float dt, float ft, int itmute, int lmute, int sscale,
             const float *ttn, const float *atn, float *q)
 
+    # synthetics
+    int su_goupillaudpo_tmax(int n, int l, int k)
+    int su_goupillaudpo(int n, const float *r, int l, int k, int tmax, int pV, float *x, float *out, int *odd)
+    int su_goupillaud_tmax(int n, int l, int k)
+    int su_goupillaud(int n, const float *rin, int l, int k, int tmax, int pV, float *out, int *odd)
+    int su_imp_nfft(int nt)
+    void su_imp2d_trace(int nt, float dt, int nfft, float c, float rs, float rg, const float *tout, float *rt, complex *ct,
+        float *data)
+    void su_imp3d_trace(int nt, float dt, int nfft, float c, float rs, float rg, int dir, float rd, const float *tout,
+        float *temp, float *rt, complex *ct, float *data)
+    int su_syncz_tables(int ninf, int ntr, float dx, const float *zint, const float *dip, const float *v, const float *rho,
+        float *dipr, float *xl, float *xr, float *theta, float *m, float *b, float *d, float *k, float *w, float *meet,
+        float *trcoefs, int *dorow, int *info)
+    void su_syncz_trace(int ninf, float x, int nt, float dt, float tdelay, const float *v, const float *m, const float *b,
+        const float *d, const float *k, const float *w, const float *meet, const float *trcoefs, const int *dorow,
+        const float *tout, float *data, float *trace)
+
     # velocity analysis
     int su_velan_accumulate(int nt, float dt, float ft, float offset, int nv, float dv, float fv, float anis1,
             float anis2, float smute, const float *data, float *num, float *den, float *nnz)
@@ -868,7 +885,109 @@ cdef extern from "su.h" nogil:
                   float v00, float dvdx, float dvdz,
                   int ls, int er, int ob, Wavelet *w, int nr, Reflector *r, int lhd, int nhd, float *hd
               );
-
+    void su_synlvcw(float *data,
+                    float xs, float zs, float xg, float zg,
+                    size_t nt, float dt, float ft,
+                    float v00, float dvdx, float dvdz, float gamma,
+                    int ls, int er, int ob, int sp,
+                    Wavelet *w, int nr, Reflector *r, int lhd, int nhd, float *hd
+                )
+    void su_synlvfti(float *trace, float v00, float dvdx, float dvdz,
+                     int ls, int er, int ob, Wavelet *w, int trans,
+                     int nitmax, float epst, int zeroff,
+                     int ntries, float epsx, float angxs,
+                     float xs, float zs, float xg, float zg,
+                     float a, float f, float l,
+                     int nr, Reflector *r, int nt, float dt, float ft,
+                     int lhd, int nhd, float *hd
+                 )
+    int su_synvxz_offset(const float *vel, int nx, int nz, float dx, float dz, float fx,
+                         int nxb, int nxd, float xo, int nxm, float dxm, float fxm,
+                         int ls, Wavelet *w, int nr, Reflector *r, int nt, float dt, float ft,
+                         int lhd, int nhd, float *hd, float *out
+                     )
+    int su_synvxzcs_shot(const float *vel, const float *pert, int nx, int nz, float dx, float dz, float fx,
+                         int nxb, int nxd, int nxc, int nzc, float xs, int nxg, float dxg, float gx0,
+                         int ls, Wavelet *w, int nr, Reflector *r, int nt, float dt, float ft,
+                         int lhd, int nhd, float *hd, float *out
+                     )
+    void su_kdsyn2d_reference(int nr, int nzt, float dr, float dzt, float fzt, float dvz, float v0,
+                              float *tb, float *pb, float *sigb, float *cosb)
+    void su_kdsyn2d_residual(int ns, float fs, float ds, int nxt, float fxt, float dxt, int nzt, int nr, float dr,
+                             const float *tb, float *ttab)
+    void su_kdsyn2d_integrate(const float *mig, int nz, float dz, int nx, int m, float *migi)
+    int su_kdsyn2d_trace(float *trace, int nt, float ft, float dt, float xs, float xg,
+                         const float *mig, const float *migi, float aperx,
+                         int nx, float fx, float dx, int nz, float fz, float dz,
+                         int mzmax, int ls, float angmax, float v0, float fmax, Wavelet *w,
+                         const float *tb, const float *pb, const float *sigb, const float *cosb, int nr,
+                         const float *ttab, int ns, float fs, float ds, float *tsum, float *tt,
+                         int nxt, float fxt, float dxt, int nzt, float fzt, float dzt,
+                         int lhd, int nhd, float *hd)
+    int su_fdmod1_plan(const float *rv, int nz, float dz, float tmax, int nt_in, int styp, float freq,
+                       float *dt, int *nt, float *t0, int *ies)
+    int su_fdmod1_run(const float *rv, const float *rd, int nz, float dz, float dt, int nt, float t0, int ies,
+                      int isz, int irz, const int *abs, int styp, float freq, int td, int zd, int press,
+                      float *sismo, float *snaps)
+    void su_fdmod2_exsrc_setup(int ns, const float *xs, const float *zs, float *vs, float *xsd, float *zsd)
+    void su_fdmod2_ptsrc(float sstrength, float xs, float zs, int nx, float dx, float fx, int nz, float dz, float fz,
+                         float dt, float t, float fmax, float fpeak, int mono, float *s)
+    void su_fdmod2_exsrc(int ns, const float *xs, const float *zs, const float *vs, const float *xsd, const float *zsd,
+                         int nx, float dx, float fx, int nz, float dz, float fz,
+                         float dt, float t, float fpeak, int pwt, int mono, float *s)
+    void su_fdmod2_tstep(int nx, float dx, int nz, float dz, float dt, const float *dvv, const float *od, const float *s,
+                         const float *pm, const float *p, float *pp, const int *abs)
+    void su_fdmod2_star(int nx, float dx, int nz, float dz, float dt, const float *dvv, const float *od, const float *s,
+                        const float *pm, const float *p, float *pp)
+    ctypedef struct FdmodPml:
+        pass
+    void su_fdmod2pml_exsrc(int ns, const float *xs, const float *zs, const float *vs, const float *xsd, const float *zsd,
+                            int nx, float dx, float fx, int nz, float dz, float fz, float dt, float t, float fmax, float *s)
+    FdmodPml *su_fdmod2_pml_init(int nx, int nz, float dx, float dz, float dt, int pml_thick, float pml_max,
+                                 const float *dvv, const float *od)
+    void su_fdmod2_pml_free(FdmodPml *P)
+    void su_fdmod2_pml_tstep(FdmodPml *P, int nx, float dx, int nz, float dz, float dt, const float *dvv, const float *od,
+                             const float *s, const float *pm, const float *p, float *pp, const int *abs)
+    cdef struct Ea2dfModel:
+        pass
+    Ea2dfModel *su_ea2df_create(float dt, float ft, float lt, int nx, float dx, float fx, int nz, float dz, float fz,
+                                float sx, float sz, const char *stype, float sang, const char *wtype, float ts, float favg,
+                                int qsw, int aniso, int tsw, const int *bcin, float bc_a, float bc_r, float hsz, float vsx,
+                                const float *c11in, const float *c55in, const float *rhoin, const float *c13in, const float *c33in,
+                                const float *c15in, const float *c35in, const float *qin, int *err)
+    void su_ea2df_info(const Ea2dfModel *M, int *nxpadded, int *nzpadded, int *nt, int *wbc, int *done)
+    void su_ea2df_lines(const Ea2dfModel *M, const float **hu, const float **hw, const float **vu, const float **vw)
+    void su_ea2df_snapshot(const Ea2dfModel *M, int which, float *out)
+    int su_ea2df_step(Ea2dfModel *M)
+    void su_ea2df_free(Ea2dfModel *M)
+    int su_remac2d(int opflag, int nx, int nz, int nt, float dx, float dz, float dt,
+                   int nsourc, const int *isx, const int *isz, const float *amps_in, float w,
+                   int sflag, float fmax, int nwav_in, float dtwave_in, const float *wave_in, int fsflag, float vmaxu,
+                   float dtsnap, int iabso, float abso, int nbwx, int nbwz,
+                   const float *vel, const float *dens, int nsectx, const int *irz, int nsectz, const int *irx,
+                   float *sectx, float *sectz, int nsnap, float *snap)
+    int su_remel2dan(int amode, int nx, int nz, int nt, float dx, float dz, float dt,
+                     int nsourc, const int *isx, const int *isz, const int *styp, const float *samp, float w,
+                     int sflag, float fmax, int nwav_in, float dtwave_in, const float *wave_in, float vmaxu, float vmax0, float vmin0,
+                     float dtsnap, int nsntyp, const int *sntyp, int nsnap, int iabso, float abso, int nbwx, int nbwz,
+                     const float *dens, const float *vp, const float *vs,
+                     const float *c11in, const float *c13in, const float *c15in, const float *c33in, const float *c35in, const float *c55in,
+                     int nsectx, const int *irz, const int *rxtyp, int nsectz, const int *irx, const int *rztyp,
+                     float *xsect, float *zsect, float *snap)
+    cdef struct FctModel:
+        pass
+    FctModel *su_fctanismod_create(int nx, int nz, int nt, float dx, float dz, float dt, int sx, int sz,
+                                   int receiverdepth, int vspnx, int impulse, int source, int isurf, int dofct, int fctxbeg,
+                                   int fctzbeg, int fctxend, int fctzend, int forcex, int forcey, int forcez, int wavelet,
+                                   int movebc, float fpeak, float eta0, float eta, float deta0dx, float deta0dz,
+                                   float detadx, float detadz, const float *aa, const float *cc, const float *ff,
+                                   const float *ll, const float *nn, const float *rho, const float *xzsource, int *err)
+    float su_fctanismod_vmax(const FctModel *M)
+    int su_fctanismod_done(const FctModel *M)
+    int su_fctanismod_step(FctModel *M)
+    void su_fctanismod_snapshot(const FctModel *M, int which, float *out)
+    void su_fctanismod_records(const FctModel *M, const float **refl, const float **vsp)
+    void su_fctanismod_free(FctModel *M)
 
 cdef extern from "taup.h" nogil:
     # slant stacks (tau-p transforms), from par/lib/taup.c
