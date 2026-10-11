@@ -372,6 +372,10 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.synthetics.ea2df` | `suea2df` | (an)elastic anisotropic 2-D finite-difference forward modelling, fourth order in space: the model is arrays, the seismograms are trace streams, the wavefield is `Snapshots` at the times asked for |
 | `seispy.synthetics.remac2d`, `remel2dan` | `suremac2d`, `suremel2dan` | acoustic and elastic anisotropic 2-D Fourier-method modelling with the rapid expansion (REM) time integration, free of grid dispersion and of a limit on `dt`: arrays in, section streams and `Snapshots` out |
 | `seispy.synthetics.fctanismod` | `sufctanismod` | elastic finite-difference modelling in media with a vertical symmetry axis, with the flux-corrected transport (FCT) against grid dispersion: arrays or profiles in, seismograms as trace streams and the wavefield as `Snapshots` |
+| `seispy.migration.stolt` | `sustolt` | Stolt (f-k) migration of stacked data or common-offset gathers, with a v(t) stretch and offset mixing |
+| `seispy.migration.migfd`, `migffd`, `migpspi` | `sumigfd`, `sumigffd`, `sumigpspi` | finite-difference (45 to 90 degrees), Fourier finite-difference and phase-shift-plus-interpolation depth migration of zero-offset sections, with the velocity as an `(nz, nx)` array |
+| `seispy.migration.migps` | `sumigps` | phase-shift migration with turning rays for v(t) |
+| `seispy.migration.kdmig2d`, `ktmig2d` | `sukdmig2d`, `suktmig2d` | Kirchhoff depth migration from traveltime tables (arrays), prestack or poststack, and prestack time migration with the double square root operator |
 | `seispy.synthetics.imp2d`, `imp3d` | `suimp2d`, `suimp3d` | Born-integral shot records for a line scatterer (2-D) and a point scatterer (3-D, with the direct arrival if `dir=1`): sources |
 | `seispy.synthetics.syncz` | `susyncz` | zero-offset true-amplitude (2.5-D) data over dipping interfaces in constant-velocity layers: a source |
 | `seispy.synthetics.goupillaudpo` | `sugoupillaudpo` | primaries-only impulse response of a lossless Goupillaud medium, one seismogram for each reflectivity series |

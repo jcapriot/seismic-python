@@ -988,6 +988,19 @@ cdef extern from "su.h" nogil:
     void su_fctanismod_snapshot(const FctModel *M, int which, float *out)
     void su_fctanismod_records(const FctModel *M, const float **refl, const float **vsp)
     void su_fctanismod_free(FctModel *M)
+    int su_stolt(int nx, int nt, float dt, float dx, int ntmig, const float *tmig_in, const float *vmig_in, float vscale,
+                 float smig, float fmax, int lstaper, int lbtaper, const float *gather, float *out)
+    int su_migfd(int nx, int nt, int nz, float dz, float dt, float dx, int dip, const float *pin, const float *vin,
+                 float *cresult_out)
+    int su_migffd(int nx, int nt, int nz, float dz, float dt, float dx, const float *pin, const float *vin, float *cresult_out)
+    int su_migps(int nx, int nt, float dt, float dx, const float *ffil_in, int nxpad, int ltaper, int np, int ntflag,
+                 const float *vt, const float *data, float *out)
+    int su_migpspi(int nx, int nt, int nz, float dz, float dt, float dx, const float *pin, const float *vin, float *cresult_out)
+    void su_kdmig2d_reference(int nr, int nzt, float dxo, float dzt, float fzt, float dvz, float v0, float *tb, float *pb, float *cs0b, float *angb)
+    void su_kdmig2d_residual(int ns, float fs, float ds, int nxt, float fxt, float dxt, int nzt, int nr, float dxo, const float *tb, float *ttab)
+    int su_kdmig2d_trace(const float *data, int nt, float ft, float dt, float sx, float gx, float *mig, float aperx, int nxo, float fxo, float dxo, int nzo, float fzo, float dzo, int ls, int mtmax, float dxm, float fmax, float angmax, const float *tb, const float *pb, const float *cs0b, const float *angb, int nr, const float *ttab, int ns, float fs, float ds, float es, float offmax, float *tsum, float *tt, int nzt, float fzt, float dzt, int nxt, float fxt, float dxt, int npv, const float *tv, const float *cs, float *tvsum, float *cssum, float *mig1)
+    int su_ktmig2d(int ntr, int nt, float dt, float dx, float h, float angmax, int nfc, int fwidth, const float *data_in, const float *vel_in, float *mig_out)
+    void su_ints8_tables()
 
 cdef extern from "taup.h" nogil:
     # slant stacks (tau-p transforms), from par/lib/taup.c
