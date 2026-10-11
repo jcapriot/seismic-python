@@ -8,7 +8,8 @@ from seispy.transforms import (
 )
 
 DT = 0.004
-N = 64
+# (SU's FFT pads a trace to a length that it is fast for, and 60 is one that is not padded)
+N = 60
 
 
 def traces(data, dt=DT):
@@ -57,7 +58,7 @@ def test_clogfft_unwraps_the_phase_of_a_delay():
     # exp(+i w t0) in the SU kernel: the phase increases linearly, well past pi
     expected = 2 * np.pi * np.arange(N // 2 + 1) * delay / N
     assert phase[-1] > 10
-    # (the derivative of the phase is a central difference, which makes the slope sin(x) / x too small, x = 2 pi 5 / 64)
+    # (the derivative of the phase is a central difference, which makes the slope sin(x) / x too small, x = 2 pi 5 / 60)
     npt.assert_allclose(phase, expected, rtol=0.05, atol=0.05)
     assert np.all(np.diff(phase) > 0)
     # and with the trend removed (the default) the delay is taken out
@@ -75,8 +76,8 @@ def test_clogfft_simple_unwrap_has_no_jumps():
 
 
 def test_clogfft_odd_lengths_and_zero_traces():
-    (out,) = run(clogfft(unwrap=0), traces(DATA[0, :63]))
-    assert out.n_sample == 64 // 2 + 1  # (made even)
+    (out,) = run(clogfft(unwrap=0), traces(DATA[0, :59]))
+    assert out.n_sample == 60 // 2 + 1  # (padded to an even length)
     (zero,) = run(clogfft(), traces(np.zeros(N)))
     assert not np.asarray(zero).any()
 

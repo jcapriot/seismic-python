@@ -4,6 +4,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
+from seispy import _fft
 from seispy import attributes as at
 from seispy import operations as op
 from seispy.amplitudes import ai2r, gain, nan, normalize, r2ai, weight, zero
@@ -298,10 +299,11 @@ def test_real_linear_filters_work_on_each_part():
 
 
 def test_filter_of_a_complex_tone_keeps_the_sign_of_its_frequency():
-    # a real filter does not tell positive from negative frequencies, but it keeps the complex tone as it was
+    # a real filter does not tell positive from negative frequencies, but it keeps the complex tone as it was (tapered:
+    # the trace is padded with zeros for the transform, and the filter rings at a jump)
     n = 400
     t = np.arange(n) * DT
-    tone = np.exp(2j * np.pi * 25 * t).astype(np.complex64)
+    tone = (np.hanning(n) * np.exp(2j * np.pi * 25 * t)).astype(np.complex64)
     (out,) = run(sufilter(f=[10, 20, 40, 50]), make(tone))
     npt.assert_allclose(np.asarray(out), tone, atol=2e-2)
     (low,) = run(sufilter(f=[1, 2, 5, 6]), make(tone))
@@ -385,7 +387,7 @@ def test_analytic_trace():
 def test_fft_and_back(n, sign):
     x = RNG.normal(size=(2, n)).astype(np.float32)
     spectra = run(fft(sign=sign), make(x, sample_start=0.1))
-    n_fft = n + n % 2
+    n_fft = _fft.good_length_within(n, 2 * n)  # (padded as sufft does)
     for s in spectra:
         assert s.dtype == np.complex64 and s.n_sample == n_fft // 2 + 1
         assert s.header['d_sample'] == pytest.approx(1.0 / (n_fft * DT))
@@ -395,12 +397,11 @@ def test_fft_and_back(n, sign):
         assert b.dtype == np.float32 and b.n_sample == n_fft
         assert b.header['d_sample'] == pytest.approx(DT) and b.header['sampling_domain'] == 1
         npt.assert_allclose(np.asarray(b)[:n], original, atol=1e-5)
-        if n % 2:
-            assert np.asarray(b)[-1] == pytest.approx(0, abs=1e-5)  # the padding
+        npt.assert_allclose(np.asarray(b)[n:], 0, atol=1e-5)  # the padding
 
 
 def test_fft_values_and_signs():
-    x = RNG.normal(size=(1, 32)).astype(np.float32)
+    x = RNG.normal(size=(1, 60)).astype(np.float32)  # (60 is not padded)
     (plus,) = run(fft(sign=1), make(x))
     (minus,) = run(fft(sign=-1), make(x))
     # (the SU transform with sign = -1 is the usual one)
@@ -408,10 +409,10 @@ def test_fft_values_and_signs():
     npt.assert_allclose(np.asarray(plus), np.conj(np.fft.rfft(x[0])), rtol=1e-5, atol=1e-5)
     # not the inverse sign: the trace comes back turned around in time
     (wrong,) = run(ifft(sign=1), [plus])
-    npt.assert_allclose(np.asarray(wrong), x[0][(-np.arange(32)) % 32], atol=1e-5)
+    npt.assert_allclose(np.asarray(wrong), x[0][(-np.arange(60)) % 60], atol=1e-5)
     # dt for traces that do not say
     (no_dt,) = run(fft(dt=0.002), make(x, dt=0.0))
-    assert no_dt.header['d_sample'] == pytest.approx(1 / (32 * 0.002))
+    assert no_dt.header['d_sample'] == pytest.approx(1 / (60 * 0.002))
     with pytest.raises(ValueError):
         fft(sign=0)
     with pytest.raises(ValueError):

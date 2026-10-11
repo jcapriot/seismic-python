@@ -227,20 +227,20 @@ cdef extern from "cwp.h" nogil:
     void simple_unwrap_phase(int n, int trend, int zeromean, float w,
                              float *phase)
 
-    # (no longer used, we use numpy's FFT) Prime Factor FFTs
+    # Prime Factor FFTs (the only FFT of seispy: see _fft.pyx)
     int npfa(int nmin)
-    # int npfao(int nmin, int nmax)
+    int npfao(int nmin, int nmax)
     int npfar(int nmin)
     int npfaro(int nmin, int nmax)
-    # void pfacc(int isign, int n, complex z[])
-    # void pfarc(int isign, int n, float rz[], complex cz[])
-    # void pfacr(int isign, int n, complex cz[], float rz[])
-    # void pfa2cc(int isign, int idim, int n1, int n2, complex z[])
-    # void pfa2rc(int isign, int idim, int n1, int n2, float rz[], complex cz[])
-    # void pfa2cr(int isign, int idim, int n1, int n2, complex cz[], float rz[])
-    # void pfamcc(int isign, int n, int nt, int k, int kt, complex z[])
+    void pfacc(int isign, int n, complex z[])
+    void pfarc(int isign, int n, float rz[], complex cz[])
+    void pfacr(int isign, int n, complex cz[], float rz[])
+    void pfa2cc(int isign, int idim, int n1, int n2, complex z[])
+    void pfa2rc(int isign, int idim, int n1, int n2, float rz[], complex cz[])
+    void pfa2cr(int isign, int idim, int n1, int n2, complex cz[], float rz[])
+    void pfamcc(int isign, int n, int nt, int k, int kt, complex z[])
 
-    # (no longer used, we use numpy's FFT) Prime Factor FFTs(double version)
+    # (the double versions are not used: seispy._fft is single precision) Prime Factor FFTs(double version)
     # int npfa_d(int nmin)
     # int npfao_d(int nmin, int nmax)
     # int npfar_d(int nmin)
@@ -410,7 +410,7 @@ cdef extern from "cwp.h" nogil:
     void free2dcomplex(dcomplex ** p)
     void free3dcomplex(dcomplex ** *p)
 
-    # (no longer used, we use numpy's FFT) Prime Factor FFTs(double version)
+    # (the double versions are not used: seispy._fft is single precision) Prime Factor FFTs(double version)
     # int npfa_d(int nmin)
     # int npfao_d(int nmin, int nmax)
     # int npfar_d(int nmin)
@@ -434,7 +434,7 @@ cdef extern from "cwp.h" nogil:
     void free2dcomplex(dcomplex ** p)
     void free3dcomplex(dcomplex ** *p)
 
-    # (no longer used, we use numpy's FFT) Prime Factor FFTs(double version)
+    # (the double versions are not used: seispy._fft is single precision) Prime Factor FFTs(double version)
     # int npfa_d(int nmin)
     # int npfao_d(int nmin, int nmax)
     # int npfar_d(int nmin)

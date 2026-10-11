@@ -2,6 +2,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
+from seispy import _fft
 from seispy.container import Trace, from_iterable
 from seispy.convolution import acorfrac, refcon
 from seispy.noise import addflatnoise, addnoise, jitter
@@ -141,9 +142,10 @@ def test_acorfrac_one_minus_one_is_the_autoconvolution():
 def test_acorfrac_phase_only_with_a_zero():
     # a = 0 and b = 1 takes the phase out: it is the zero phase wavelet with the amplitude spectrum of the trace
     x = DATA[:1, :32]
-    out = arr(run(acorfrac(a=0.0, b=1.0, ntout=64), traces(x)))[0]
+    nfft = _fft.good_length(64)  # (the transform is padded to a length of at least twice that of the trace)
+    out = arr(run(acorfrac(a=0.0, b=1.0, ntout=nfft), traces(x)))[0]
     spectrum = np.fft.rfft(out)
-    original = np.fft.rfft(x[0], 64)
+    original = np.fft.rfft(x[0], nfft)
     npt.assert_allclose(np.abs(spectrum), np.abs(original), rtol=1e-3, atol=1e-3)
     npt.assert_allclose(spectrum.imag, 0.0, atol=1e-3)
 

@@ -2,8 +2,10 @@
 Amplitude spectra: SUSPECFX, SUSPECFK and SUSPECK1K2 (``su/main/transforms``).
 
 ``specfx`` is the amplitude spectrum of each trace. ``specfk`` is the f-k spectrum, and ``speck1k2`` the 2D (k1, k2) spectrum,
-of the traces of the stream taken as one panel (held in memory). The transforms are numpy's, of the traces as they are (the
-first dimension is made even by a zero), see the notes in ``seispy.transforms``.
+of the traces of the stream taken as one panel (held in memory). The transforms are those of seispy (``seispy._fft``, SU's
+prime-factor FFT) of the traces padded with zeros as the programs do: ``npfaro`` with a look ahead of twice the trace for
+``specfx``, and ``npfar`` and ``npfa`` of the numbers of samples and of traces for the panels (so ``specfk`` and
+``speck1k2`` have one output trace for each of the ``npfa`` wavenumbers).
 
 The traces that these make are marked as being in the Fourier domain, and their sample interval and first sample are those of
 their (frequency or wavenumber) axis. The axis across the traces is not in the trace header; ``specfk`` has traces from
@@ -20,6 +22,7 @@ import warnings
 import numpy as np
 
 from ..container import as_trace_iterator, from_iterable
+from .. import _fft
 from ..stage import Stage, per_trace
 
 __all__ = ['specfx', 'specfk', 'speck1k2']
@@ -39,12 +42,12 @@ def _specfx(upstream, *, dt=None):
     def specfx_trace(trace):
         x = _real(trace, 'specfx')
         n = x.shape[0]
-        n_fft = n + n % 2
+        n_fft = _fft.good_length_within(n, 2 * n)
         sample_dt = trace.d_sample or dt
         if not sample_dt:
             warnings.warn("dt not set, assumed to be .004")
             sample_dt = 0.004
-        amplitude = np.abs(np.fft.rfft(x, n_fft)).astype(np.float32)
+        amplitude = np.abs(_fft.rfft(x, n_fft))
         amplitude[0] /= 2.0  # (as in the program)
         return trace.replace(amplitude, d_sample=1.0 / (n_fft * sample_dt), sample_start=0.0, sampling_domain=_FOURIER)
 
@@ -54,7 +57,7 @@ def _specfx(upstream, *, dt=None):
 def specfx(dt=None):
     """The Fourier amplitude spectrum of each trace (SUSPECFX).
 
-    The traces have ``nfft / 2 + 1`` samples (``nfft`` is the number of samples, made even), from 0 Hz in steps of
+    The traces have ``nfft / 2 + 1`` samples (``nfft`` is the number of samples, padded as the program does), from 0 Hz in steps of
     ``1 / (nfft * dt)``, which is their sample interval, and are marked as being in the Fourier domain. As in the
     program, the amplitude at 0 Hz is halved.
 
@@ -94,13 +97,14 @@ def _specfk(upstream, *, dt=None, dx=None):
         if sample_dx is None:
             warnings.warn("dx not given, assuming dx=1.0")
             sample_dx = 1.0
-        ntfft = nt + nt % 2
+        ntfft = _fft.good_length(nt)
+        nxfft = _fft.good_length(nx, real=False)
         # (the odd traces are negated to center the transform across the traces)
         signs = np.where(np.arange(nx) % 2 == 1, -1.0, 1.0).astype(np.float32)
-        # the SU transform in time has exp(+i w t) in it, the one across the traces exp(-i k x)
-        ct = np.conj(np.fft.rfft(x * signs[:, None], ntfft, axis=1))
-        ct = np.fft.fft(ct, axis=0)
-        amplitude = np.abs(ct).astype(np.float32)
+        # the transform in time has exp(+i w t) in it, the one across the traces exp(-i k x)
+        ct = _fft.rfft(x * signs[:, None], ntfft, axis=1, sign=1)
+        ct = _fft.fft(ct, nxfft, axis=0, sign=-1)
+        amplitude = np.abs(ct)
         d1 = 1.0 / (ntfft * sample_dt)
         for ik, row in enumerate(amplitude):
             yield traces[0].replace(row, trace_id=ik + 1, d_sample=d1, sample_start=0.0, sampling_domain=_FOURIER)
@@ -111,9 +115,9 @@ def _specfk(upstream, *, dt=None, dx=None):
 def specfk(dt=None, dx=None):
     """The f-k Fourier amplitude spectrum of a data set (SUSPECFK).
 
-    The traces of the stream are one panel of ``nx`` traces, which gives ``nx`` traces of ``nfft / 2 + 1`` samples (the
-    frequencies from 0 in steps of ``1 / (nfft dt)``), one for each wavenumber, from ``-1 / (2 dx)`` in steps of
-    ``1 / (nx dx)``. Their phase is ``i (w t - k x) = 2 pi i (F t - K x)``.
+    The traces of the stream are one panel of ``nx`` traces, which gives ``nk`` traces of ``nfft / 2 + 1`` samples (the
+    frequencies from 0 in steps of ``1 / (nfft dt)``; ``nfft`` and ``nk`` are the numbers of samples and of traces padded to
+    lengths of the FFT, ``npfar`` and ``npfa``), one for each wavenumber, from ``-1 / (2 dx)`` in steps of ``1 / (nk dx)``. Their phase is ``i (w t - k x) = 2 pi i (F t - K x)``.
 
     Parameters
     ----------
@@ -144,12 +148,12 @@ def _speck1k2(upstream, *, d1=None, d2=None):
         if dx2 is None:
             warnings.warn("d2 not given, assuming d2=1.0")
             dx2 = 1.0
-        n1fft = nx1 + nx1 % 2
-        n2fft = nx2
+        n1fft = _fft.good_length(nx1)
+        n2fft = _fft.good_length(nx2, real=False)
         nk1 = n1fft // 2 + 1
         signs = np.where(np.arange(nx2) % 2 == 1, -1.0, 1.0).astype(np.float32)
-        c = np.fft.rfft(x * signs[:, None], n1fft, axis=1)
-        c = np.fft.fft(c, axis=0)
+        c = _fft.rfft(x * signs[:, None], n1fft, axis=1, sign=-1)
+        c = _fft.fft(c, n2fft, axis=0, sign=-1)
         mag = np.abs(c)
         nk2 = n2fft
         # (the wavenumber of the first sample is -Nyquist, and the zero wavenumber is on the sample n1fft / 2)
@@ -171,7 +175,7 @@ def speck1k2(d1=None, d2=None):
     """The 2D (k1, k2) Fourier amplitude spectrum of a (x1, x2) data set (SUSPECK1K2).
 
     The traces of the stream are one panel: the samples of a trace run along x1 (the fast dimension), the traces along x2.
-    The result has one trace for each wavenumber k2, of ``nfft`` samples (``nfft`` is the number of samples, made even) for
+    The result has one trace for each wavenumber k2, of ``nfft`` samples (``nfft`` is the number of samples padded to a length of the FFT) for
     k1, running from -Nyquist to +Nyquist in both dimensions: k1 from ``-1 / (2 d1)`` in steps of ``1 / (nfft d1)`` (the
     sample interval and first sample of the traces), k2 from ``-1 / (2 d2) + 1 / (n d2)`` in steps of ``1 / (n d2)``, for
     the ``n`` traces.

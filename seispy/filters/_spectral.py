@@ -1,9 +1,11 @@
 """
-Filters that are made from the Fourier transform of each trace: SUMINPHASE and SUTVBAND (``su/main/filters``), with
-numpy's FFT on the trace as it is (the SU programs zero-pad each trace for their prime-factor FFT).
+Filters that are made from the Fourier transform of each trace: SUMINPHASE and SUTVBAND (``su/main/filters``), with the FFT
+of seispy (``seispy._fft``, SU's prime-factor FFT) of each trace zero-padded as the programs do (``npfao`` or ``npfaro``
+with a look ahead of twice the trace).
 """
 import numpy as np
 
+from .. import _fft
 from ..stage import per_trace
 from . import _kernels
 
@@ -14,10 +16,8 @@ def _nint(x):
 
 # ------------------------------------------------------------------------------------------------------- minphase
 def _cwp_fft(z, sign):
-    """The (unnormalized) transform of the SU library, with exp(sign * i w t) in its kernel. numpy's has sign = -1."""
-    if sign == -1:
-        return np.fft.fft(z)
-    return np.fft.ifft(z) * z.shape[0]
+    """The (unnormalized) transform of the SU library, with exp(sign * i w t) in its kernel"""
+    return _fft.fft(z, sign=sign)
 
 
 def _kolmogoroff(cx, pnoise, sign1, sign2):
@@ -47,12 +47,12 @@ def _minphase(upstream, *, sign1=1, sign2=-1, pnoise=1.0e-9):
         nt = x.shape[0]
         if nt == 0 or not x.any():
             return trace  # (nothing to find the spectrum of)
-        n_fft = nt + nt % 2  # (even, as the factorization needs)
-        z = np.zeros(n_fft, dtype=np.complex128)
+        n_fft = _fft.good_length_within(nt, 2 * nt, real=False)
+        z = np.zeros(n_fft, dtype=np.complex64)
         z[:nt] = x
         spectrum = _kolmogoroff(_cwp_fft(z, sign1), pnoise, sign1, sign2)
         y = _cwp_fft(spectrum, sign2) / n_fft
-        return trace.replace(y.real[:nt].astype(np.float32))
+        return trace.replace(np.ascontiguousarray(y.real[:nt], dtype=np.float32))
 
     return per_trace(upstream, minphase_trace)
 
@@ -64,7 +64,7 @@ def _minphase(upstream, *, sign1=1, sign2=-1, pnoise=1.0e-9):
 # sign2 : sign of the second transform, default -1
 # pnoise : white noise that keeps the log of the spectrum finite, relative to its maximum, default 1e-9
 #
-# (suminphase pads the trace for its FFT. Here an odd number of samples is made even.)
+# (the trace is padded for the FFT as suminphase does)
 
 
 # --------------------------------------------------------------------------------------------------------- tvband
@@ -109,7 +109,8 @@ def _tvband(upstream, tf, f, *, dt=None):
         first_time = trace.header['sample_start']
         # the samples that the filters are centered on, kept on the trace
         centers = [min(max(_nint((t - first_time) / sample_dt), 0), n - 1) for t in tf]
-        filters = list(filters_for(n, sample_dt))
+        nfft = _fft.good_length_within(n, 2 * n)
+        filters = list(filters_for(nfft, sample_dt))
         # a filter for the start and for the end of the trace, if the user did not give them
         if centers[0] > 0:
             centers.insert(0, 0)
@@ -125,7 +126,7 @@ def _tvband(upstream, tf, f, *, dt=None):
             hi = centers[j + 1] if j + 1 < len(centers) else n - 1
             part = np.zeros(n, dtype=np.float64)
             part[lo:hi + 1] = x[lo:hi + 1]
-            filtered.append(np.fft.irfft(np.fft.rfft(part, n) * amplitude, n))
+            filtered.append(_fft.irfft(_fft.rfft(part, nfft) * amplitude, nfft)[:n])
 
         # and fade from one into the next between the centers (from the SU library)
         pieces = [np.ascontiguousarray(part, dtype=np.float32) for part in filtered]

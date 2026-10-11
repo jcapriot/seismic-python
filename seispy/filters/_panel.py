@@ -5,13 +5,11 @@ SUKFRAC, SUSMGAUSS2, SULFAF, SUCCFILT, SUDEGHOST, SUFWATRIM, SUSVDFILT, SUFWMIX 
 
 The traces of the stream are one panel (held in memory) for the filters of the wavenumber domain, and a gather (the run of
 traces that have the same value of ``key``, by default ``ensemble_number``) for the others. The samples are transformed
-with numpy's FFTs, padded to the lengths that the prime-factor FFTs of SU use (``npfa``, ``npfar`` and ``npfaro`` of the
-SU library, so that edge effects are the same as those of the programs). The filters that are a polygon with sine
-squared tapers are made by ``polygonalFilter`` of the SU library (``_filter.design``).
-
-The SU transforms have ``exp(+i w t)`` as their forward kernel when their ``isign`` is 1 (SUDEGHOST), and numpy's
-``exp(-i w t)`` when it is -1 (the two dimensional transforms of the filters of the wavenumber domain): what the programs
-multiply a spectrum by is conjugated here accordingly.
+with the FFT of seispy (``seispy._fft``, SU's prime-factor FFT), padded to the lengths that the programs use (``npfa``,
+``npfar`` and ``npfaro`` of the SU library, so that edge effects are the same as those of the programs), with the sign of
+the kernel that each program has: +1 forward in time (SUDEGHOST), and -1 forward and +1 inverse for the two dimensional
+transforms of the filters of the wavenumber domain. The filters that are a polygon with sine squared tapers are made by
+``polygonalFilter`` of the SU library (``_filter.design``).
 
 Where the program plainly does not do what its documentation says (or what could not be intended), this does what the
 documentation says, and the differences are listed with each stage. The output traces have the headers of the input
@@ -24,7 +22,8 @@ import numpy as np
 
 from ..container import as_trace_iterator, from_iterable
 from ..parallel import group_by
-from ._filter import design as _design, npfa as _npfa, npfar as _npfar, npfaro as _npfaro
+from .. import _fft
+from ._filter import design as _design
 
 __all__ = ['_kfilter', '_k1k2filter', '_kfrac', '_smgauss2', '_lfaf', '_ccfilt', '_deghost', '_fwatrim', '_svdfilt', '_fwmix',
            '_groll']
@@ -116,8 +115,8 @@ def _polygon(x, k, amps):
 
 
 def _fft_lengths(nx1, nx2, name):
-    nx1fft = _npfaro(nx1, 2 * nx1)
-    nx2fft = _npfa(nx2)
+    nx1fft = _fft.good_length_within(nx1, 2 * nx1)
+    nx2fft = _fft.good_length(nx2, real=False)
     if nx1fft >= 720720 or nx2fft >= 720720:
         raise ValueError(f"Padded nx1={nx1fft} or nx2={nx2fft}--too big")
     return nx1fft, nx2fft
@@ -127,11 +126,12 @@ def _apply_2d(data, nx1fft, nx2fft, response):
     """Filter the panel (nx2, nx1) with response (nx2fft, nx1fft // 2 + 1), the transforms made as SU's (padded with zeros,
     transformed in the first dimension as real to complex and in the second as complex to complex)"""
     nx2, nx1 = data.shape
-    spectrum = np.fft.rfft(data, nx1fft, axis=1)
-    spectrum = np.fft.fft(spectrum, nx2fft, axis=0)
+    # (the sign of the kernel of these is -1 forward and +1 inverse, as the programs have it)
+    spectrum = _fft.rfft(data, nx1fft, axis=1, sign=-1)
+    spectrum = _fft.fft(spectrum, nx2fft, axis=0, sign=-1)
     spectrum *= response
-    spectrum = np.fft.ifft(spectrum, axis=0)
-    return np.fft.irfft(spectrum, nx1fft, axis=1)[:nx2, :nx1]
+    spectrum = _fft.ifft(spectrum, axis=0, sign=1)
+    return _fft.irfft(spectrum, nx1fft, axis=1, sign=1)[:nx2, :nx1]
 
 
 def _wavenumber_indices(nx1fft, nx2fft):
@@ -295,11 +295,11 @@ def _lfaf(upstream, *, f1=3.0, f2=20.0, fr=5.0, vel=1000.0, dx=10.0, maxmix=None
             data = _real_panel(group, 'lfaf')
             ntr, nt = data.shape
             sample_dt = _sample_interval(group[0], dt, 'lfaf')
-            nfft = _npfaro(nt, nt)
+            nfft = _fft.good_length_within(nt, nt)
             nf = nfft // 2 + 1
             d_f = 1.0 / (nfft * sample_dt)
             if1, if2, ifr = _nint(f1 / d_f), _nint(f2 / d_f), _nint(fr / d_f)
-            spectrum = np.fft.rfft(data, nfft, axis=1)
+            spectrum = _fft.rfft(data, nfft, axis=1)
             out = spectrum.copy()
             largest = ntr if maxmix is None else min(maxmix, ntr)
             weights = {}
@@ -318,7 +318,7 @@ def _lfaf(upstream, *, f1=3.0, f2=20.0, fr=5.0, vel=1000.0, dx=10.0, maxmix=None
                 else:
                     wh = 1.0 - (iw - if2) / ifr
                     out[:, iw] = (wh * mixed + spectrum[:, iw] * (1.0 - wh)) * adb + spectrum[:, iw] * (1.0 - adb)
-            result = np.fft.irfft(out, nfft, axis=1)[:, :nt]
+            result = _fft.irfft(out, nfft, axis=1)[:, :nt]
             for trace, row in zip(group, result):
                 yield trace.replace(np.ascontiguousarray(row, dtype=np.float32))
 
@@ -336,17 +336,17 @@ def _ccfilt(upstream, *, cch=1.0, ccl=0.3, padd=25.0, key='ensemble_number'):
             ntr, nt = data.shape
             if ntr < 2:
                 raise ValueError("A gather needs at least 2 traces.")
-            nfft = _npfar(int(np.float32(nt) * factor))
+            nfft = _fft.good_length(int(np.float32(nt) * factor))
             if nfft >= 720720:
                 raise ValueError(f"Padded nt={nfft}--too big")
             nf = nfft // 2 + 1
-            spectrum = np.fft.rfft(data, nfft, axis=1)
+            spectrum = _fft.rfft(data, nfft, axis=1)
             phase = np.angle(spectrum)
             # the correlation coefficient of the phases of neighbouring traces, in every frequency but the Nyquist
             cc = np.cos(phase[:-1, :nf - 1] - phase[1:, :nf - 1])
             kept = spectrum[:-1, :nf - 1]
             kept[(cc > cch) | (cc < ccl)] = 0.0
-            result = np.fft.irfft(spectrum, nfft, axis=1)[:, :nt]
+            result = _fft.irfft(spectrum, nfft, axis=1)[:, :nt]
             for trace, row in zip(group, result):
                 yield trace.replace(np.ascontiguousarray(row, dtype=np.float32))
 
@@ -367,7 +367,7 @@ def _deghost(upstream, *, h, v=1500.0, r=0.5, lambert=True, deghost=True, pnoise
             nt = trace.n_sample
             # (as SU does, .004 if there is nothing at all)
             sample_dt = float(dt) if dt else (trace.d_sample or 0.004)
-            nfft = _npfaro(nt, 2 * nt)
+            nfft = _fft.good_length_within(nt, 2 * nt)
             if nfft >= 720720:
                 raise ValueError(f"Padded nt={nfft}--too big")
             # the horizontal slowness: p0 for the first trace of the (tau, p) panel, dp more for each of the next
@@ -389,10 +389,9 @@ def _deghost(upstream, *, h, v=1500.0, r=0.5, lambert=True, deghost=True, pnoise
                     response = (real + 1j * imag) / (real * real + imag * imag)
                 else:
                     response = real - 1j * imag  # (the ghost is added: for modelling)
-                # the SU transform of this program is the conjugate of numpy's
-                cache[key] = np.conj(response)
-            spectrum = np.fft.rfft(np.asarray(trace, dtype=np.float64), nfft)
-            yield trace.replace(np.fft.irfft(spectrum * cache[key], nfft)[:nt].astype(np.float32))
+                cache[key] = response.astype(np.complex64)
+            spectrum = _fft.rfft(np.asarray(trace), nfft)
+            yield trace.replace(_fft.irfft(spectrum * cache[key], nfft)[:nt])
 
     return from_iterable(traces(), n_traces=source.n_traces)
 
@@ -408,17 +407,17 @@ def _fwatrim(upstream, *, trim=15.0, padd=25.0, mark=None, key='ensemble_number'
         for group in group_by(source, key):
             data = _real_panel(group, 'fwatrim')
             ntr, nt = data.shape
-            nfft = _npfar(int(np.float32(nt) * factor))
+            nfft = _fft.good_length(int(np.float32(nt) * factor))
             if nfft >= 720720:
                 raise ValueError(f"Padded nt={nfft}--too big")
-            spectrum = np.fft.rfft(data, nfft, axis=1)
+            spectrum = _fft.rfft(data, nfft, axis=1)
             # in every frequency, the mean of the real parts and of the imaginary parts of the traces without the
             # smallest and the largest ones
             ist = _nint(ntr * (trim / 100.0))
             real = np.sort(spectrum.real, axis=0)[ist:ntr - ist]
             imag = np.sort(spectrum.imag, axis=0)[ist:ntr - ist]
             mean = (real.sum(axis=0) + 1j * imag.sum(axis=0)) / (ntr - 2 * ist)
-            out = np.fft.irfft(mean, nfft)[:nt]
+            out = _fft.irfft(mean, nfft)[:nt]
             if mark is None:
                 chosen = 0
             elif callable(mark):
@@ -486,11 +485,11 @@ def _fwmix(upstream, *, key, dx, mark=None, vf=False, vmin=5000.0, fac=1.0, padd
             data = _real_panel(gather, 'fwmix')
             ntr, nt = data.shape
             sample_dt = _sample_interval(gather[0], None, 'fwmix')
-            nfft = _npfar(int(np.float32(nt) * factor))
+            nfft = _fft.good_length(int(np.float32(nt) * factor))
             if nfft >= 720720:
                 raise ValueError(f"Padded nt={nfft}--too big")
             d_f = 1.0 / (nfft * sample_dt)
-            spectrum = np.fft.rfft(data, nfft, axis=1)
+            spectrum = _fft.rfft(data, nfft, axis=1)
             if mark is None:
                 centre = 0
             elif callable(mark):
@@ -517,7 +516,7 @@ def _fwmix(upstream, *, key, dx, mark=None, vf=False, vmin=5000.0, fac=1.0, padd
                 use = np.ones(spectrum.shape, dtype=bool)
             w = weight[:, None] * use
             mixed = (spectrum * w).sum(axis=0) / w.sum(axis=0)
-            out = np.fft.irfft(mixed, nfft)[:nt]
+            out = _fft.irfft(mixed, nfft)[:nt]
             yield gather[centre].replace(np.ascontiguousarray(out, dtype=np.float32))
 
     return from_iterable(traces())

@@ -7,18 +7,20 @@ time-frequency amplitude. In the headers of the traces of a panel ``ensemble_num
 they are from, and ``ensemble_trace_number`` is the number of the frequency or scale (from 1). The frequency of each (the
 SU programs write it to trace header words that are not here) is found as:
 
-* ``st``: ``(first + k) / (n dt)``, for the traces ``k = 0, 1, ...`` of the panel, where ``n`` is the number of samples of
-  the trace, and ``first = int(fmin n dt + 1)``;
+* ``st``: ``(first + k) / (nfft dt)``, for the traces ``k = 0, 1, ...`` of the panel, where ``nfft`` is the length that the
+  trace is padded to (``seispy._fft.good_length_within(n, 2 n)``), and ``first = int(fmin nfft dt + 1)``;
 * ``gabor``: ``fmin + k band`` for the center of the filter of trace ``k``;
 * ``cwt``: the scales are ``base ** (first + k expinc)`` (a smaller scale is a higher frequency).
 
-These use numpy's FFT of the trace as it is (what is done between the transforms is a function of the SU library, see ``_kernels.pyx``), where the SU programs pad the traces to a length that their FFT is fast
-for. Not supported: the ``holder`` option of ``sugabor`` and ``sucwt`` (an estimate of the regularity), which index
+The traces are padded for the FFT to a length that is fast for it, as the SU programs do (``npfaro(n, 2 n)``), and the
+rows are cut back to the length of the trace; what is done between the transforms is a function of the SU library, see
+``_kernels.pyx``. Not supported: the ``holder`` option of ``sugabor`` and ``sucwt`` (an estimate of the regularity), which index
 past the arrays that they have, and the wavelet types of ``sucwt`` that its program does not have (``wtype`` 1 and
 2).
 """
 import numpy as np
 
+from .. import _fft
 from ..container import as_trace_iterator, from_iterable
 from ..stage import Stage, stage
 from . import _hilbert, _kernels
@@ -60,24 +62,28 @@ def _sample_interval(trace, dt):
 # ------------------------------------------------------------------------------------------------------------- st
 def _st(upstream, *, fmin=0.0, fmax=None, dt=None):
     def rows_of(trace):
-        x = np.asarray(trace).astype(np.float64)
+        x = np.asarray(trace)
         n = x.shape[0]
         sample_dt = _sample_interval(trace, dt)
         nyquist = 0.5 / sample_dt
         f_max = nyquist if fmax is None else fmax
-        d1 = 1.0 / (n * sample_dt)
+        if n == 0:
+            return np.zeros((0, n))
+        # (the trace is padded as sust does, and the rows are cut to the trace: the program wrote the padded rows in rows of
+        # the trace's length)
+        nfft = _fft.good_length_within(n, 2 * n)
+        d1 = 1.0 / (nfft * sample_dt)
         first = int(fmin / d1 + 1)
         last = int(f_max / d1 + 1 + 0.5)
-        if n == 0 or last < first:
+        if last < first:
             return np.zeros((0, n))
-        # the transform of the analytic signal (in the convention of the SU transform: the conjugate of numpy's), from the SU library
-        h = np.ascontiguousarray(np.conj(np.fft.fft(x)), dtype=np.complex64)
+        # the transform of the analytic signal, from the SU library
+        h = _fft.fft(x, nfft, sign=1)
         _kernels.st_analytic(h)
         rows = np.empty((last - first + 1, n))
         for row, k in enumerate(range(first, last + 1)):
             g = _kernels.st_row(h, k)  # (the row, in frequency)
-            # (the inverse transform with the sign -1 of the SU transform is numpy's forward)
-            rows[row] = np.abs(np.fft.fft(g)) / n
+            rows[row] = np.abs(_fft.fft(g, sign=-1))[:n] / nfft
         return rows
 
     return _panel(upstream, rows_of)
@@ -90,8 +96,8 @@ def _st(upstream, *, fmin=0.0, fmax=None, dt=None):
 #              starts at the first frequency after 0, since the transform has no 0 frequency.)
 # dt : sample interval (s), for traces that do not have one
 #
-# The frequencies are separated by 1 / (n dt), where n is the number of samples of the trace (sust pads it for its
-# FFT, which changes that).
+# The frequencies are separated by 1 / (nfft dt), where nfft is the number of samples of the trace padded for the FFT as
+# sust does.
 st = stage(_st, parallelism='trace', name='st', validate=True)
 
 
@@ -113,13 +119,13 @@ def _gabor(upstream, *, fmin=0.0, fmax=None, band=None, beta=3.0, alpha=None, dt
         n_filters = _nint((f_max - fmin) / width)
         if n == 0 or n_filters < 1:
             return np.zeros((0, n))
-        n_fft = n + n % 2
-        spectrum = np.fft.rfft(x, n_fft)
+        n_fft = _fft.good_length_within(n, 2 * n)
+        spectrum = _fft.rfft(x, n_fft)
         rows = np.empty((n_filters, n))
         for i in range(n_filters):
             center = fmin + i * width
             filt = _kernels.gabor_filter(center, sample_dt, n_fft, steep, width, 1.0)  # (the function of the SU library)
-            filtered = np.fft.irfft(spectrum * filt, n_fft)
+            filtered = _fft.irfft(spectrum * filt, n_fft)
             narrow = np.ascontiguousarray(filtered[:n], dtype=F32)
             quadrature = _hilbert.hilbert(narrow)  # (the Hilbert transform of SU)
             rows[i] = _attributes.envelope(narrow, quadrature)  # (and the amplitude of the two of them)

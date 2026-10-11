@@ -7,6 +7,7 @@ from seispy.transforms import cwt, gabor, st
 
 DT = 0.004
 N = 128
+NS = 240  # (a length that the FFT of SU does not pad, for st)
 
 
 def traces(data, dt=DT, **per_trace):
@@ -33,37 +34,37 @@ def tone(period, n=N):
 # ------------------------------------------------------------------------------------------------------------- st
 def test_st_of_a_tone_is_flat_in_time_at_its_frequency():
     k0 = 20
-    panel = run(st(), traces(np.cos(2 * np.pi * k0 * np.arange(N) / N)))
+    panel = run(st(), traces(np.cos(2 * np.pi * k0 * np.arange(NS) / NS)))
     rows = arr(panel)
     # the first row is the first frequency after 0: row n is the frequency index n + 1
-    assert rows.shape == (int(N / 2 + 1.5), N)
+    assert rows.shape == (int(NS / 2 + 1.5), NS)
     on = rows[k0 - 1]
     npt.assert_allclose(on, 1.0, rtol=1e-6)  # (a unit tone has a unit amplitude)
     assert rows[k0 + 9].max() < 0.5 * on.min() and rows[k0 - 11].max() < 0.5 * on.min()
 
 
 def test_st_headers_and_frequency_range():
-    panel = run(st(fmin=20.0, fmax=60.0), traces(tone(16)[None, :], trace_id=7))
-    d1 = 1.0 / (N * DT)
+    panel = run(st(fmin=20.0, fmax=60.0), traces(tone(16, NS)[None, :], trace_id=7))
+    d1 = 1.0 / (NS * DT)
     first, last = int(20.0 / d1 + 1), int(60.0 / d1 + 1.5)
     assert len(panel) == last - first + 1
     assert {t.header['ensemble_number'] for t in panel} == {7}
     assert [t.header['ensemble_trace_number'] for t in panel] == list(range(1, len(panel) + 1))
-    assert all(t.n_sample == N and t.d_sample == DT for t in panel)
+    assert all(t.n_sample == NS and t.d_sample == DT for t in panel)
 
 
 def test_st_every_trace_is_a_panel():
-    panel = run(st(fmin=10.0, fmax=20.0), traces(np.vstack([tone(16), tone(32)]), trace_id=[1, 2]))
+    panel = run(st(fmin=10.0, fmax=20.0), traces(np.vstack([tone(16, NS), tone(32, NS)]), trace_id=[1, 2]))
     numbers = [t.header['ensemble_number'] for t in panel]
     assert numbers == sorted(numbers) and set(numbers) == {1, 2}
 
 
 def test_st_needs_real_traces_and_a_sample_interval():
     with pytest.raises(TypeError):
-        run(st(), [Trace((tone(16) + 0j).astype(np.complex64), d_sample=DT)])
+        run(st(), [Trace((tone(16, NS) + 0j).astype(np.complex64), d_sample=DT)])
     with pytest.raises(ValueError):
-        run(st(), [Trace(tone(16).astype(np.float32), d_sample=0.0)])
-    assert len(run(st(dt=DT), [Trace(tone(16).astype(np.float32), d_sample=0.0)])) > 0
+        run(st(), [Trace(tone(16, NS).astype(np.float32), d_sample=0.0)])
+    assert len(run(st(dt=DT), [Trace(tone(16, NS).astype(np.float32), d_sample=0.0)])) > 0
 
 
 # ---------------------------------------------------------------------------------------------------------- gabor

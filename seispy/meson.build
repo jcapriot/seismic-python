@@ -46,3 +46,15 @@ py.extension_module(
     dependencies : [py_dep, su_dep],
     include_directories: spy_include,
 )
+
+py.extension_module(
+    '_fft',
+    '_fft.pyx',
+    cython_args: cython_args,
+    cpp_args: cython_c_args,
+    install: true,
+    limited_api: limited_api,
+    subdir: module_path,
+    dependencies : [py_dep, su_dep],
+    include_directories: spy_include,
+)

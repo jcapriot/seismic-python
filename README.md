@@ -339,8 +339,8 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.stretching.shift`, `resamp`, `reduce`, `nmo` | `sushift`, `suresamp`, `sureduce`, `sunmo` | shift/window in time, sinc resampling, reduced time, NMO with velocity functions of time and CDP |
 | `seispy.transforms.hilb`, `zerophase` | `suhilb`, `suzerophase` | Hilbert transform (SU's own FIR, whose sign is the opposite of the usual one), zero-phase equivalent |
 | `seispy.transforms.analytic`, `fft`, `ifft`, `real`, `imag`, `amp`, `logamp`, `phase` | `suanalytic`, `sufft`, `suifft`, `suamp` | complex traces: make them, and take them apart |
-| `seispy.filters.frac`, `phase` | `sufrac`, `suphase` | fractional derivative/integral plus a phase shift, linear phase manipulation (numpy FFT) |
-| `seispy.filters.minphase`, `tvband` | `suminphase`, `sutvband` | minimum phase equivalent (Kolmogoroff), time-variant bandpass (numpy FFT) |
+| `seispy.filters.frac`, `phase` | `sufrac`, `suphase` | fractional derivative/integral plus a phase shift, linear phase manipulation (SU's FFT) |
+| `seispy.filters.minphase`, `tvband` | `suminphase`, `sutvband` | minimum phase equivalent (Kolmogoroff), time-variant bandpass (SU's FFT) |
 | `seispy.decon.pef`, `shape` | `supef`, `sushape` | Wiener predictive/spiking deconvolution, Wiener shaping filter (SU's Toeplitz solver) |
 | `seispy.stretching.log`, `ilog`, `tsq`, `ttoz`, `ztot` | `sulog`, `suilog`, `sutsq`, `suttoz`, `suztot` | log and time-squared stretch, time-to-depth and depth-to-time resampling |
 | `seispy.convolution.acor`, `conv`, `xcor` | `suacor`, `suconv`, `suxcor` | auto-correlation, convolution and cross-correlation with a filter |
@@ -360,8 +360,8 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.filters.median`, `medmix` | `sumedian` | median or mix about a moveout curve, to suppress events that have that moveout |
 | `seispy.stretching.taupnmo` | `sutaupnmo` | NMO of tau-p traces, for a velocity function of tau and CDP, with the ray parameter from a header value or a function |
 | `seispy.amplitudes.dipdivcor` | `sudipdivcor` | dip-dependent divergence correction in the wavenumber domain, for the traces of the stream as one panel |
-| `seispy.transforms.specfx`, `specfk`, `speck1k2` | `suspecfx`, `suspecfk`, `suspeck1k2` | amplitude spectra: of each trace, f-k of a panel, and 2D (k1, k2) of a panel (numpy's FFT; the axis across the traces is described in the docstring) |
-| `seispy.filters.dipfilt` | `sudipfilt` | dip (slope) filter in the f-k domain, with a bias slope that is made horizontal first (numpy's FFT) |
+| `seispy.transforms.specfx`, `specfk`, `speck1k2` | `suspecfx`, `suspecfk`, `suspeck1k2` | amplitude spectra: of each trace, f-k of a panel, and 2D (k1, k2) of a panel (SU's FFT; the axis across the traces is described in the docstring) |
+| `seispy.filters.dipfilt` | `sudipfilt` | dip (slope) filter in the f-k domain, with a bias slope that is made horizontal first (SU's FFT) |
 | `seispy.transforms.taup` | `sutaup` | forward and inverse slant stacks (tau-p transforms) of a panel, in the t-x and F-K domains (`option` 1 to 4) |
 | `seispy.velocity.velan`, `relan` | `suvelan`, `surelan` | stacking velocity semblance of CDP gathers, residual moveout semblance of migrated gathers: one semblance trace per velocity (or r parameter) for each gather (`ensemble_trace_number` counts them) |
 | `seispy.windowing.split`, `cleave`, `putgthr` | `susplit`, `sucleave`, `suputgthr` | write the traces that go through them to files, by the value of a header word, by ranges of it, or a file for each gather (in seispy's own format, `.spy`) |
@@ -370,8 +370,8 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.synthetics.kdsyn2d` | `sukdsyn2d` | Kirchhoff demigration of a migrated section into common-shot gathers (the section and the traveltime tables are arrays, not files): a source |
 | `seispy.synthetics.fdmod1`, `fdmod1_snapshots`, `fdmod2`, `fdmod2_pml` | `sufdmod1`, `sufdmod2`, `sufdmod2_pml` | finite-difference modelling of the acoustic wave equation: the model is an array, the seismograms are trace streams and the wavefield is `Snapshots` (an iterable of frames) |
 | `seispy.synthetics.ea2df` | `suea2df` | (an)elastic anisotropic 2-D finite-difference forward modelling, fourth order in space: the model is arrays, the seismograms are trace streams, the wavefield is `Snapshots` at the times asked for |
-| `seispy.filters.kfilter`, `k1k2filter` | `sukfilter`, `suk1k2filter` | sin^2 tapered polygonal filters of the (k1, k2) wavenumbers of a panel: radially symmetric, and the product of one in each of k1 and k2 (numpy's FFT, with `polygonalFilter` of SU for the second; the gain of the first is 1 in its passband) |
-| `seispy.filters.kfrac` | `sukfrac` | a fractional power of `i|k|` with a phase shift, in the (k1, k2) domain of a panel, optionally directional (numpy's FFT) |
+| `seispy.filters.kfilter`, `k1k2filter` | `sukfilter`, `suk1k2filter` | sin^2 tapered polygonal filters of the (k1, k2) wavenumbers of a panel: radially symmetric, and the product of one in each of k1 and k2 (SU's FFT, with `polygonalFilter` of SU for the second; the gain of the first is 1 in its passband) |
+| `seispy.filters.kfrac` | `sukfrac` | a fractional power of `i|k|` with a phase shift, in the (k1, k2) domain of a panel, optionally directional (SU's FFT) |
 | `seispy.filters.smgauss2` | `susmgauss2` | Gaussian smoothing of a panel of velocities (as slowness, as its documentation says) |
 | `seispy.filters.lfaf`, `ccfilt`, `fwatrim` | `sulfaf`, `succfilt`, `sufwatrim` | FX domain filters of gathers: low frequency trace mixing, removal of the frequencies that do not correlate in phase between traces, and an alpha trimmed mean of the traces of a gather |
 | `seispy.filters.deghost` | `sudeghost` | deghosting (or ghosting) in (t, x) or (tau, p), with the delay of the ghost a function of the slowness |
@@ -424,10 +424,15 @@ differ from the programs, because the program is plainly wrong, are listed at th
   (`seispy.attributes`), `conv`, `acor`, `xcor` and `refcon` (the SU convolution and correlation), `pgc`, the stacks
   (`stack`, `divstack`, `pws`, `stackup`), and `median` and `medmix`. The random numbers of `addnoise`, `addflatnoise`, `jitter`
   and `randspike` are those of SU's generators, so for the same `seed` they make the numbers that the programs make.
-* **numpy's FFT, with the SU code between the transforms:** `dipdivcor` (the transform in x), `specfx`, `specfk`, `speck1k2`, `dipfilt`, `frac`, `phase`, `minphase`, `tvband`, `wfft`, `acorfrac`,
-  `clogfft`, `iclogfft`, `cepstrum`, `icepstrum` (phase unwrapping is SU's too), `st`, `gabor` and `cwt`. The SU programs
-  pad every trace for their prime-factor FFT, which is not carried over. `filter` designs its filter with `polygonalFilter` of the
-  SU sources, and filters with numpy's FFT.
+* **SU's FFT, with the SU code between the transforms:** `dipdivcor` (the transform in x), `specfx`, `specfk`, `speck1k2`, `dipfilt`, `frac`, `phase`, `minphase`, `tvband`, `wfft`, `acorfrac`,
+  `clogfft`, `iclogfft`, `cepstrum`, `icepstrum` (phase unwrapping is SU's too), `st`, `gabor`, `cwt`, `fft`, `ifft`, `zerophase`
+  and the 2-D filters. Every frequency domain operation, in Python and in the C++, goes through one FFT, `seispy._fft`:
+  SU's prime-factor FFT (`cwp/lib/pfafft`) in single precision, with its sign convention (`exp(+i w t)` to frequency), no normalization
+  on the way to frequency, and its lengths: products of mutually prime factors from 2, 3, 4, 5, 7, 8, 9, 11, 13 and 16. The traces are
+  padded for it as the programs pad them (`npfaro(nt, 2 nt)`, and so on), so the outputs have SU's lengths and frequency
+  samplings (`seispy._fft.good_length` and `good_length_within` give them). `filter` designs its filter with `polygonalFilter` of the
+  SU sources, and filters with the same FFT. Where a program's padding wraps a correlation around (`acorfrac`) the padding is made
+  long enough not to.
 * **Plain numpy, where the program is only arithmetic:** the operations of `suop` (all but `saf`, `freq` and `despike`),
   `zero`, `nan`, `normalize`, `weight`, `divcor`, `impedance`, `ai2r`, `r2ai`, `wind`, `kill`, `vlength`, `sort`,
   `mixgathers`, `suop2` (the binary operations), `shift`, `reduce`, `real`, `imag`, `amp`, `fft` and `ifft`,

@@ -1,16 +1,16 @@
 """
 SUFILTER: a zero-phase, sine-squared tapered frequency domain filter (``su/main/filters/sufilter.c``).
 
-The filter is designed by ``polygonalFilter`` in the SU sources (``_filter.pyx``). The filtering is done with numpy's
-Fourier transforms of the trace as it is: sufilter zero-pads each trace to a length that its prime-factor FFT is fast
-for (``npfaro``), which is not needed here. The padding changes the frequency spacing a little, so the filter is a bit
-different from sufilter's for a trace length that it would have padded. The filter is also rebuilt whenever the
-length or sample interval of the traces changes, where sufilter builds it once from the first trace.
+The filter is designed by ``polygonalFilter`` in the SU sources (``_filter.pyx``). The filtering is done with the FFT of
+seispy (``seispy._fft``, SU's prime-factor FFT) of each trace zero-padded as sufilter does, to the length that is fast for
+it (``npfaro`` with a look ahead of twice the trace). The filter is rebuilt whenever the length or sample interval of
+the traces changes, where sufilter builds it once from the first trace.
 """
 import warnings
 
 import numpy as np
 
+from .. import _fft
 from ..stage import per_trace
 from . import _filter
 
@@ -68,11 +68,12 @@ def _filter_stage(upstream, *, f=None, amps=None, dt=None, inplace=False):
             return trace
         # (as SU does, .004 if there is nothing at all)
         sample_dt = trace.d_sample or dt or 0.004
+        nfft = _fft.good_length_within(n, 2 * n)
         x = np.asarray(trace)
-        y = np.fft.irfft(np.fft.rfft(x, n) * filter_for(n, sample_dt), n)
+        y = _fft.irfft(_fft.rfft(x, nfft) * filter_for(nfft, sample_dt), nfft)[:n]
         if inplace:
             x[:] = y
             return trace
-        return trace.replace(y.astype(np.float32))
+        return trace.replace(y)
 
     return per_trace(upstream, filter_trace, on_complex='linear')

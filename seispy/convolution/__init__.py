@@ -12,6 +12,7 @@ import warnings
 
 import numpy as np
 
+from .. import _fft
 from . import _cwp
 from ..container import as_trace_iterator, from_iterable
 from ..stage import Stage, per_trace, stage
@@ -178,14 +179,14 @@ def _acorfrac(upstream, *, a=0.0, b=0.0, ntout=None, sym=False):
         if nt == 0:
             return trace
         n_out = nt if ntout is None else ntout
-        # padded so that the correlation does not wrap around (sufracacor's is a length that is fast for its FFT)
-        n_fft = 2 * nt
+        # padded so that the correlation does not wrap around: suacorfrac means that (its comment says "extra 2 in nfft is
+        # to avoid wrap around") but its npfaro(nt, 2 nt) can be nt itself, so it does wrap
+        n_fft = _fft.good_length(2 * nt)
         if n_out > n_fft:
             raise ValueError(f"ntout={n_out} is more than the {n_fft} samples that the transform has")
-        # the SU transform has the conjugate of numpy's kernel
-        spectrum = np.ascontiguousarray(np.conj(np.fft.rfft(x.astype(np.float64), n_fft)), dtype=np.complex64)
+        spectrum = _fft.rfft(x, n_fft)
         _cwp.acorfrac_spectrum(spectrum, a, b, False)  # (the function of the SU library)
-        y = np.fft.irfft(np.conj(spectrum), n_fft)
+        y = _fft.irfft(spectrum, n_fft)
         if sym:
             # the lags -(n_out - 1) / 2 to (n_out - 1) / 2, around the zero lag
             first = -((n_out - 1) // 2)
@@ -211,7 +212,8 @@ def _acorfrac(upstream, *, a=0.0, b=0.0, ntout=None, sym=False):
 # Where suacorfrac says what it does, this does that: its dopow() returns 1 whenever a is 0 (so that b has no effect then),
 # it does not divide its inverse FFT by the length of the transform (so that (0, 0) does not change the data), it
 # does not use ntout at all, and its sym is a sign change of every other frequency, which is a shift by half of a longer
-# padded trace. The transform is padded to twice the length of the trace.
+# padded trace. The transform is padded with zeros to the least length that it has of at least twice that of the trace
+# (``seispy._fft.good_length``): the program's ``npfaro(nt, 2 nt)`` can be ``nt``, which wraps the correlation around.
 acorfrac = stage(_acorfrac, parallelism='trace', name='acorfrac', validate=True)
 
 
