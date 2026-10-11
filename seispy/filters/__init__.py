@@ -79,5 +79,15 @@ fwatrim = stage(_panel._fwatrim, parallelism='ensemble', name='fwatrim', validat
 # (SUSVDFILT). The traces are taken in windows of ntrw traces (all of them by default).
 svdfilt = stage(_panel._svdfilt, parallelism='serial', name='svdfilt', validate=True)
 
+# A weighted mix in the frequency domain of the traces of every gather, one trace per gather (SUFWMIX): the weight of a trace
+# is 1 / (d / fac + 1), d the distance from the marked trace (an index in the gather or a function of a trace; the first by
+# default) in the units of dx, over the header values key (names, or functions of a trace). `vf=True` leaves a trace out of a
+# frequency if it is over a half wavelength of the slope vmin from the marked one.
+fwmix = stage(_panel._fwmix, parallelism='ensemble', name='fwmix', validate=True)
+
+# Ground roll suppression with the Karhunen-Loeve transform (SUGROLL): the first nrot principal components of the traces of
+# the stream (one panel) are the ground roll, which is subtracted (or kept, with sb=True).
+groll = stage(_panel._groll, parallelism='serial', name='groll', validate=True)
+
 __all__ = ['bfilt', 'filter', 'frac', 'phase', 'minphase', 'tvband', 'median', 'medmix', 'dipfilt', 'kfilter', 'k1k2filter', 'kfrac',
-           'smgauss2', 'lfaf', 'ccfilt', 'deghost', 'fwatrim', 'svdfilt']
+           'smgauss2', 'lfaf', 'ccfilt', 'deghost', 'fwatrim', 'svdfilt', 'fwmix', 'groll']

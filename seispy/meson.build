@@ -18,6 +18,7 @@ subdir('waveforms')
 subdir('synthetics')
 subdir('welllogs')
 subdir('dmo')
+subdir('picking')
 
 python_sources = [
     '__init__.py',

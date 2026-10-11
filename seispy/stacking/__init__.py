@@ -24,7 +24,9 @@ from ..stage import header_value, stage
 from ..transforms import _hilbert
 from . import _kernels
 
-__all__ = ['stack', 'divstack', 'pws', 'stackup']
+from ._extra import recip, cvs4fowler  # noqa: E402 (SURECIP and SUCVS4FOWLER, see _extra.py)
+
+__all__ = ['stack', 'divstack', 'pws', 'stackup', 'recip', 'cvs4fowler']
 
 F32 = np.float32
 

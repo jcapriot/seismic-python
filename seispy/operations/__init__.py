@@ -138,12 +138,15 @@ despike = _define(
 from ._panels import mix, sum2, diff2, prod2, quo2, ptsum, ptdiff, ptprod, ptquo, zipper, zippol  # noqa: E402
 from ._dataset import flip, vcat  # noqa: E402
 
+from ._misc import permute, recmo, simmat  # noqa: E402 (SUPERMUTE, SURECMO and SUSIMMAT: see _misc.py)
+
 __all__ = [
     'abs', 'ssqrt', 'sqr', 'ssqr', 'sgn', 'exp', 'sexp', 'slog', 'slog2', 'slog10', 'db', 'cos', 'sin', 'tan', 'cosh',
     'sinh', 'tanh', 'neg', 'nop', 'posonly', 'negonly', 'inv', 'mod2pi', 's2v', 's2vm', 'd2m', 'cnorm',
     'norm', 'avg', 'rmsamp', 'sum', 'integ',
     'refl', 'diff', 'drv2', 'drv4', 'spike', 'lnza', 'saf', 'freq',
     'mean', 'std', 'var', 'despike',
+    'permute', 'recmo', 'simmat',
     'mix', 'sum2', 'diff2', 'prod2', 'quo2', 'ptsum', 'ptdiff', 'ptprod', 'ptquo', 'zipper', 'zippol',
     'flip', 'vcat',
 ]

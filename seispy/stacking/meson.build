@@ -2,6 +2,7 @@ module_path = 'seispy/stacking'
 
 python_sources = [
     '__init__.py',
+    '_extra.py',
 ]
 
 py.extension_module(

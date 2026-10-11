@@ -20,9 +20,11 @@ from .. import spool
 from ..stage import Stage, header_value as _key_value, per_trace
 from . import _mutec
 
-__all__ = ['mute', 'wind', 'kill', 'vlength', 'sort', 'mixgathers', 'split', 'cleave', 'putgthr', 'getgthr', 'sorty']
+__all__ = ['mute', 'wind', 'kill', 'vlength', 'sort', 'mixgathers', 'split', 'cleave', 'putgthr', 'getgthr', 'sorty', 'mutecsv', 'braid', 'windpoly',
+           'padmissing', 'gprfb']
 
 from ._splitting import split, cleave, putgthr, getgthr, sorty  # noqa: E402
+from ._extra import mutecsv, braid, windpoly, padmissing, gprfb  # noqa: E402 (see _extra.py)
 
 _abs, _min, _max = abs, min, max
 

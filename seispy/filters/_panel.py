@@ -1,6 +1,7 @@
 """
 Filters of a panel or of a gather of traces, done in the Fourier domain (``su/main/filters``): SUKFILTER, SUK1K2FILTER,
-SUKFRAC, SUSMGAUSS2, SULFAF, SUCCFILT, SUDEGHOST, SUFWATRIM, and SUSVDFILT.
+SUKFRAC, SUSMGAUSS2, SULFAF, SUCCFILT, SUDEGHOST, SUFWATRIM, SUSVDFILT, SUFWMIX (``su/main/operations``) and SUGROLL
+(``su/main/noise``).
 
 The traces of the stream are one panel (held in memory) for the filters of the wavenumber domain, and a gather (the run of
 traces that have the same value of ``key``, by default ``ensemble_number``) for the others. The samples are transformed
@@ -25,7 +26,8 @@ from ..container import as_trace_iterator, from_iterable
 from ..parallel import group_by
 from ._filter import design as _design, npfa as _npfa, npfar as _npfar, npfaro as _npfaro
 
-__all__ = ['_kfilter', '_k1k2filter', '_kfrac', '_smgauss2', '_lfaf', '_ccfilt', '_deghost', '_fwatrim', '_svdfilt']
+__all__ = ['_kfilter', '_k1k2filter', '_kfrac', '_smgauss2', '_lfaf', '_ccfilt', '_deghost', '_fwatrim', '_svdfilt', '_fwmix',
+           '_groll']
 
 # ratio of the default k1, k2, k3 and k4 to the Nyquist wavenumber
 _FRACTIONS = (0.10, 0.15, 0.45, 0.50)
@@ -460,6 +462,87 @@ def _svdfilt(upstream, *, ntrw=None, numpp=None, subtract=True):
             m = min(planes, s.shape[0])
             planes_sum = (u[:, :m] * s[:m]) @ vt[:m]  # (nt, traces)
             out[start:start + window] = block - planes_sum.T if subtract else planes_sum.T
+        for trace, row in zip(panel, out):
+            yield trace.replace(np.ascontiguousarray(row, dtype=np.float32))
+
+    return from_iterable(traces(), n_traces=source.n_traces)
+
+
+# ----------------------------------------------------------------------------------------------------------- fwmix
+def _fwmix(upstream, *, key, dx, mark=None, vf=False, vmin=5000.0, fac=1.0, padd=25.0, group='ensemble_number'):
+    keys = [key] if (callable(key) or isinstance(key, str)) else list(key)
+    spacing = np.atleast_1d(np.asarray(dx, dtype=np.float64))
+    if not keys or spacing.shape[0] != len(keys):
+        raise ValueError("key and dx must have the same number of values.")
+    if (spacing == 0).any():
+        raise ValueError("dx must not be 0.")
+    source = as_trace_iterator(upstream)
+    fac = max(float(fac), 1.0)
+    factor = np.float32(1.0) + np.float32(padd) / np.float32(100.0)
+    from ..stage import header_value
+
+    def traces():
+        for gather in group_by(source, group):
+            data = _real_panel(gather, 'fwmix')
+            ntr, nt = data.shape
+            sample_dt = _sample_interval(gather[0], None, 'fwmix')
+            nfft = _npfar(int(np.float32(nt) * factor))
+            if nfft >= 720720:
+                raise ValueError(f"Padded nt={nfft}--too big")
+            d_f = 1.0 / (nfft * sample_dt)
+            spectrum = np.fft.rfft(data, nfft, axis=1)
+            if mark is None:
+                centre = 0
+            elif callable(mark):
+                marked = [i for i, t in enumerate(gather) if mark(t)]
+                centre = marked[0] if marked else 0
+            else:
+                centre = int(mark)
+                if not 0 <= centre < ntr:
+                    raise ValueError("mark is outside of the gather.")
+            # the distance (in the units of dx) of each trace from the marked one, over the keys
+            position = np.array([[header_value(t, k) for k in keys] for t in gather]) / spacing
+            distance = np.sqrt(((position - position[centre]) ** 2).sum(axis=1))
+            # (the program summed the traces without its own weight, and did not normalize: the documentation has a mix)
+            weight = 1.0 / (distance / fac + 1.0)
+            if vf:
+                # a frequency dependent mix: the traces that are over a half wavelength of the slope vmin away do not
+                # contribute to the frequency
+                f = np.arange(spectrum.shape[1]) * d_f
+                with np.errstate(divide='ignore'):
+                    limit = np.where(f > 0, vmin / (2.0 * f), np.inf)
+                use = limit[None, :] > distance[:, None]
+                use[centre] = True
+            else:
+                use = np.ones(spectrum.shape, dtype=bool)
+            w = weight[:, None] * use
+            mixed = (spectrum * w).sum(axis=0) / w.sum(axis=0)
+            out = np.fft.irfft(mixed, nfft)[:nt]
+            yield gather[centre].replace(np.ascontiguousarray(out, dtype=np.float32))
+
+    return from_iterable(traces())
+
+
+# ----------------------------------------------------------------------------------------------------------- groll
+def _groll(upstream, *, nrot=3, sb=False):
+    """SUGROLL: the ground roll of a gather is its first nrot principal components (the Karhunen-Loeve transform), which is
+    what the first nrot singular vectors of the panel are"""
+    if nrot < 0:
+        raise ValueError("nrot must not be negative.")
+    source = as_trace_iterator(upstream)
+
+    def traces():
+        panel = list(source)
+        if not panel:
+            return
+        data = _real_panel(panel, 'groll')
+        if nrot == 0:
+            ground = np.zeros_like(data)
+        else:
+            u, s, vt = np.linalg.svd(data.T, full_matrices=False)
+            m = min(nrot, s.shape[0])
+            ground = ((u[:, :m] * s[:m]) @ vt[:m]).T
+        out = ground if sb else data - ground
         for trace, row in zip(panel, out):
             yield trace.replace(np.ascontiguousarray(row, dtype=np.float32))
 

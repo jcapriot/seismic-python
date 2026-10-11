@@ -16,6 +16,7 @@ Where the program plainly does not do what its documentation says this does what
 window of SUVELAN does not have its last sample (SURELAN has it), and the samples that its NMO could not compute are left out.
 The output traces of the programs take the header of the first trace of the next gather; these take that of their own.
 """
+import collections
 import warnings
 
 import numpy as np
@@ -26,7 +27,7 @@ from ..stacking import _at_midpoint
 from ..stage import stage
 from . import _kernels
 
-__all__ = ['velan', 'relan']
+__all__ = ['velan', 'relan', 'intvel', 'stkvel', 'IntervalModel', 'StackingModel']
 
 
 def _gather_samples(group, name):
@@ -141,3 +142,77 @@ def _relan(upstream, *, nr=51, dr=0.01, fr=-0.25, smute=1.5, dzratio=5, nsmooth=
 #
 # The traces are in depth: their sample interval and first sample are the depth ones.
 relan = stage(_relan, parallelism='ensemble', name='relan', validate=True)
+
+
+# ------------------------------------------------------------------------------------------------- intvel and stkvel
+IntervalModel = collections.namedtuple('IntervalModel', 'thickness velocity times')
+StackingModel = collections.namedtuple('StackingModel', 'times velocity')
+
+
+def intvel(vs, t0):
+    """The interval velocity model of a stacking velocity model (SUINTVEL), by the formulas of Schneider (1984).
+
+    Parameters
+    ----------
+    vs : array
+        The stacking velocities, positive.
+    t0 : array
+        The normal incidence (two-way) times, increasing.
+
+    Returns
+    -------
+    ``IntervalModel(thickness, velocity, times)``: the thickness and the velocity of each layer (``times`` are the ``t0``).
+    """
+    vs = np.atleast_1d(np.asarray(vs, dtype=np.float64))
+    t0 = np.atleast_1d(np.asarray(t0, dtype=np.float64))
+    if vs.ndim != 1 or vs.shape != t0.shape or vs.shape[0] == 0:
+        raise ValueError("vs and t0 must be 1D arrays of the same length")
+    if (vs <= 0).any():
+        raise ValueError(f"vs's must be positive: vs[{int(np.argmax(vs <= 0))}] = {vs[vs <= 0][0]}")
+    if (t0 < 0).any():
+        raise ValueError(f"t0's must be positive: t0[{int(np.argmax(t0 < 0))}] = {t0[t0 < 0][0]}")
+    if (np.diff(t0) <= 0).any():
+        raise ValueError("the t0's must increase")
+    h = np.empty_like(vs)
+    v = np.empty_like(vs)
+    h[0] = 0.5 * vs[0] * t0[0]
+    v[0] = vs[0]
+    half = 0.5 * t0
+    dt = np.diff(half)
+    dvh = np.diff(vs * vs * half)
+    if (dvh <= 0).any():
+        raise ValueError("The stacking velocities do not make a model of interval velocities (the layer needs v h > 0)")
+    h[1:] = np.sqrt(dvh * dt)
+    v[1:] = np.sqrt(dvh / dt)
+    return IntervalModel(h, v, t0)
+
+
+def stkvel(v, h, dip=0.0):
+    """The stacking velocity model of a model of layers of constant dip (SUSTKVEL), by the formulas of Schneider (1984).
+
+    Parameters
+    ----------
+    v, h : arrays
+        The interval velocities and the thicknesses of the layers (at the cmp), positive.
+    dip : float
+        The (constant) dip of the layers, degrees.
+
+    Returns
+    -------
+    ``StackingModel(times, velocity)``: the zero incidence times and the stacking velocities that ``sunmo`` needs (``tnmo``
+    and ``vnmo``).
+    """
+    v = np.atleast_1d(np.asarray(v, dtype=np.float64))
+    h = np.atleast_1d(np.asarray(h, dtype=np.float64))
+    if v.ndim != 1 or v.shape != h.shape or v.shape[0] == 0:
+        raise ValueError("v and h must be 1D arrays of the same length")
+    if (v <= 0).any():
+        raise ValueError("v's must be positive")
+    if (h <= 0).any():
+        raise ValueError("h's must be positive")
+    cosdip = np.cos(np.radians(dip))
+    if cosdip <= 0:
+        raise ValueError("dip must be under 90 degrees")
+    t0by2 = np.cumsum(h / v)
+    vh = np.cumsum(v * h)
+    return StackingModel(2.0 * t0by2 * cosdip, np.sqrt(vh / t0by2) / cosdip)
