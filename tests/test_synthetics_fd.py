@@ -519,6 +519,21 @@ def test_fctanismod_another_source_the_moving_boundary_and_the_wavelets():
     assert np.isfinite(samples_of(fctanismod(source=2, **FC).reflection('x'))).all()
 
 
+def test_fctanismod_the_moving_boundary_agrees_with_the_whole_grid():
+    # it is an optimisation: with the source near the surface (the window opens from the top) the seismograms are the same.
+    # (A window of one or two samples early in the run made SU read, and write, before the start of its arrays: the heap
+    # was corrupted.)
+    near = {**FC, 'sz': 1, 'receiverdepth': 2}
+    whole = samples_of(fctanismod(**near).reflection('x'))
+    for impulse in (False, True):
+        moving = samples_of(fctanismod(movebc=True, impulse=impulse, **near).reflection('x'))
+        npt.assert_allclose(moving, whole, atol=1e-3 * np.abs(whole).max())
+    tiny = {**near, 'nz': 4, 'nx': 4, 'sx': 1, 'nt': 20, 'receiverdepth': 1, 'vspnx': 1}
+    assert np.isfinite(samples_of(fctanismod(movebc=True, **tiny).reflection('x'))).all()
+    with pytest.raises(ValueError):
+        fctanismod(**{**tiny, 'nz': 3})
+
+
 def test_fctanismod_checks_its_input():
     with pytest.raises(ValueError, match="component"):
         fctanismod(**FC).reflection('q')
