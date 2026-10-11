@@ -166,7 +166,8 @@ def test_kdmig2d_offsets_and_the_velocity_analysis_output():
     cs = np.ones_like(KD_TTAB)
     both = list(from_iterable(traces) | kdmig2d(noff=2, doff=100.0, tv=tv, cs=cs, output='both', **KD_KW))
     assert len(both) == 2 * len(out)
-    npt.assert_allclose(np.asarray(both[0]), np.asarray(out[0]))
+    # (the same image: the velocity analysis only adds a second one; a fused multiply-add can change the last bits)
+    npt.assert_allclose(np.asarray(both[0]), np.asarray(out[0]), atol=1e-5 * np.abs(np.asarray(out[0])).max())
     assert np.abs(np.asarray(both[1])).max() > 0
     limited = list(from_iterable(traces) | kdmig2d(noff=1, off0=0.0, doff=50.0, limoff=True, **KD_KW))
     assert len(limited) == 101
