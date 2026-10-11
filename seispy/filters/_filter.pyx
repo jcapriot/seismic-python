@@ -26,3 +26,19 @@ def design(float[::1] f, float[::1] amps, int nfft, float dt):
         su.polygonalFilter(&f[0], &amps[0], npoly, nfft, dt, &filt[0], &intfr[0])
     # (polygonalFilter has the 1/nfft of an unnormalized transform in it, and numpy's transforms are normalized)
     return np.asarray(filt) * np.float32(nfft)
+
+
+def npfa(int nmin):
+    """The smallest length of at least nmin that the prime-factor FFTs of SU take (complex to complex)"""
+    return su.npfa(nmin)
+
+
+def npfar(int nmin):
+    """The smallest length of at least nmin that the real to complex prime-factor FFTs of SU take"""
+    return su.npfar(nmin)
+
+
+def npfaro(int nmin, int nmax):
+    """The length for the real to complex prime-factor FFTs of SU: at least nmin, and, if there is one, a fast one not
+    over nmax"""
+    return su.npfaro(nmin, nmax)
