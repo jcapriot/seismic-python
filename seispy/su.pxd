@@ -1001,6 +1001,23 @@ cdef extern from "su.h" nogil:
     int su_kdmig2d_trace(const float *data, int nt, float ft, float dt, float sx, float gx, float *mig, float aperx, int nxo, float fxo, float dxo, int nzo, float fzo, float dzo, int ls, int mtmax, float dxm, float fmax, float angmax, const float *tb, const float *pb, const float *cs0b, const float *angb, int nr, const float *ttab, int ns, float fs, float ds, float es, float offmax, float *tsum, float *tt, int nzt, float fzt, float dzt, int nxt, float fxt, float dxt, int npv, const float *tv, const float *cs, float *tvsum, float *cssum, float *mig1)
     int su_ktmig2d(int ntr, int nt, float dt, float dx, float h, float angmax, int nfc, int fwidth, const float *data_in, const float *vel_in, float *mig_out)
     void su_ints8_tables()
+    float gassmann_rockT0(float h, float kmin, float mumin, float rmin, float phi, float a, float b, float c, float api, float g, float s, float so, float sg, float t, float p)
+    float gassmann_rockR0(float v1, float r1, float kmin, float mumin, float rmin, float phi, float a, float b, float c, float api, float g, float s, float so, float sg, float t, float p)
+    float gassmann_rockIp(float kmin, float mumin, float rmin, float phi, float a, float b, float c, float api, float g, float s, float so, float sg, float t, float p)
+    float gassmann_rockVp(float kmin, float mumin, float rmin, float phi, float a, float b, float c, float api, float g, float s, float so, float sg, float t, float p)
+    float gassmann_rockDensity(float rmin, float phi, float api, float g, float s, float so, float sg, float t, float p)
+    float gassmann_fluidVelocity(float api, float g, float s, float so, float sg, float t, float p)
+    float gassmann_fluidModulus(float api, float g, float s, float so, float sg, float t, float p)
+    float gassmann_fluidDensity(float api, float g, float s, float so, float sg, float t, float p)
+    float gassmann_brineVelocity(float s, float t, float p)
+    float gassmann_brineModulus(float s, float t, float p)
+    float gassmann_brineDensity(float s, float t, float p)
+    float gassmann_oilModulus(float api, float g, float t, float p)
+    float gassmann_oilVelocity(float api, float g, float t, float p)
+    float gassmann_oilDensity(float api, float g, float t, float p)
+    float gassmann_gasVelocity(float g, float t, float p)
+    float gassmann_gasModulus(float g, float t, float p)
+    float gassmann_gasDensity(float g, float t, float p)
 
 cdef extern from "taup.h" nogil:
     # slant stacks (tau-p transforms), from par/lib/taup.c

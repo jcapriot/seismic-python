@@ -5,6 +5,7 @@ python_sources = [
     '_fftfilter.py',
     '_dipfilt.py',
     '_moveout.py',
+    '_panel.py',
     '_phasefilters.py',
     '_spectral.py',
 ]

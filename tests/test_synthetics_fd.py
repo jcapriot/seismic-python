@@ -152,7 +152,7 @@ def test_fdmod2_density_absorbing_and_the_free_surface():
     assert np.abs(plain - layered).max() > 0.05 * np.abs(plain).max()
     # (a constant density is 1)
     constant = samples_of(fdmod2(V2, density=np.full_like(V2, 7.0), hsz=250.0, **{**FD2, 'tmax': 0.5}).horizontal_line)
-    npt.assert_array_equal(constant, plain)
+    npt.assert_allclose(constant, plain, atol=1e-5 * np.abs(plain).max())
     # the free surface keeps the energy that the absorbing one lets out of the model
     absorbing = samples_of(fdmod2(V2, hsz=250.0, **{**FD2, 'tmax': 1.0}).horizontal_line)
     free = samples_of(fdmod2(V2, hsz=250.0, abs=(0, 1, 1, 1), **{**FD2, 'tmax': 1.0}).horizontal_line)

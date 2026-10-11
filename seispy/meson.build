@@ -16,6 +16,7 @@ subdir('migration')
 subdir('noise')
 subdir('waveforms')
 subdir('synthetics')
+subdir('welllogs')
 
 python_sources = [
     '__init__.py',
