@@ -13,13 +13,20 @@ import numpy as np
 from .. import _fft
 from ..container import as_trace_iterator, from_iterable
 from ..parallel import group_by
-from ..stacking import _at_midpoint
 from ..stage import per_trace, stage
 from . import _FOURIER, _UNIT, _radon
 
 __all__ = ['slowft', 'slowift', 'phasevel', 'ccwt', 'radon']
 
 F32 = np.float32
+
+
+def _at_midpoint(trace):
+    """The header values that put a trace at zero offset: the source and receiver at the midpoint (as in
+    ``seispy.stacking``, which can not be imported from here: it imports this package)"""
+    tx, rx = trace.header['tx_loc'], trace.header['rx_loc']
+    middle = [0.5 * (tx[0] + rx[0]), 0.5 * (tx[1] + rx[1])]
+    return dict(tx_loc=middle + [tx[2]], rx_loc=middle + [rx[2]])
 
 
 def _real_samples(trace, name):

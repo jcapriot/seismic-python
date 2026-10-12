@@ -27,7 +27,8 @@ from ..stacking import _at_midpoint
 from ..stage import stage
 from . import _kernels
 
-__all__ = ['velan', 'relan', 'intvel', 'stkvel', 'IntervalModel', 'StackingModel']
+__all__ = ['velan', 'relan', 'intvel', 'stkvel', 'IntervalModel', 'StackingModel', 'tivel', 'vel2df', 'relanan',
+           'velan_uccs', 'velan_nccs', 'velan_usel', 'velan_nsel']
 
 
 def _gather_samples(group, name):
@@ -216,3 +217,6 @@ def stkvel(v, h, dip=0.0):
     t0by2 = np.cumsum(h / v)
     vh = np.cumsum(v * h)
     return StackingModel(2.0 * t0by2 * cosdip, np.sqrt(vh / t0by2) / cosdip)
+
+
+from ._extra import tivel, vel2df, relanan, velan_uccs, velan_nccs, velan_usel, velan_nsel  # noqa: E402

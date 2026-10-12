@@ -13,6 +13,7 @@ from seispy.parallel import pmap
 from seispy.stretching import dlmo, ilog, log, nmo_a, reduce, taupnmo, ttoz
 from seispy.synthetics import synlv
 from seispy.tapering import ramp, taper, txtaper
+from seispy.velocity import relanan, vel2df, velan_nsel, velan_uccs
 from seispy.transforms import ccwt, cepstrum, clogfft, iclogfft, radon, taup, wfft
 from seispy.windowing import mute
 
@@ -65,6 +66,10 @@ PANEL_STAGES = {
     'taup_tx': lambda: taup(2, dx=10.0, pmin=0.0, pmax=0.004, np=11),
     'dipdivcor': lambda: dipdivcor(25.0, np=10, vmig=2000.0),
     'fxdecon': lambda: fxdecon(ntrw=6, ntrf=2),
+    'vel2df': lambda: vel2df(tn=0.2, nv=4, nvh=3),
+    'relanan': lambda: relanan(x=[1.0, 10.0], z=[5.0, 5.0], nr1=3, nr2=3, dzratio=2),
+    'velan_uccs': lambda: velan_uccs(nv=3),
+    'velan_nsel': lambda: velan_nsel(nv=3),
     'radon': lambda: radon(choose=3, nwin=2, muts=lambda trace: 200.0),
 }
 
