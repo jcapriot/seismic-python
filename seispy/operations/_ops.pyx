@@ -103,7 +103,7 @@ cdef class _ops(spyc.BaseTraceIterator):
         if trace.hdr.data_type == spyc.SPY_DTYPE_COMPLEX64:
             return self._next_complex(trace)
         if n_sample == 0:
-            return spyc.Trace.from_trace(spyc.copy_of_hdr(trace.hdr), data_in, True)
+            return trace.derive(data_in)
         if n_sample < self.min_samples:
             raise ValueError(f"{self.name} needs traces with at least {self.min_samples} samples.")
         if self.needs_dt and dt == 0.0:
@@ -119,4 +119,4 @@ cdef class _ops(spyc.BaseTraceIterator):
         result = self.func(x, dt, self.nw)
         if result is not None:
             x[:] = result  # (an operation can return its result instead of changing the samples)
-        return spyc.Trace.from_trace(spyc.copy_of_hdr(trace.hdr), data, True)
+        return trace.derive(data)

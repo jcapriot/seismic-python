@@ -247,7 +247,7 @@ cdef class _gain(spyc.BaseTraceIterator):
             float dt = self._dt_of(trace.hdr)
 
         if n_sample == 0:
-            return spyc.Trace.from_trace(spyc.copy_of_hdr(trace.hdr), data_in, True)
+            return trace.derive(data_in)
 
         if self.inplace:
             data = data_in
@@ -256,7 +256,7 @@ cdef class _gain(spyc.BaseTraceIterator):
             data[:] = data_in
 
         self._apply(&data[0], n_sample, <float> trace.hdr.sample_start, dt, spyc.hdr_offset(trace.hdr))
-        return spyc.Trace.from_trace(spyc.copy_of_hdr(trace.hdr), data, True)
+        return trace.derive(data)
 
     cdef spyc.Trace _next_panel(self):
         """Gain the whole data set at once, which SU does by treating all traces as one long trace."""
@@ -301,7 +301,7 @@ cdef class _gain(spyc.BaseTraceIterator):
                         tr = traces[k]
                         data = spyc.alloc_data(n)
                         data[:] = big[k * n:(k + 1) * n]
-                        self.panel_out.append(spyc.Trace.from_trace(spyc.copy_of_hdr(tr.hdr), data, True))
+                        self.panel_out.append(tr.derive(data))
                 else:
                     self.panel_out = traces
 

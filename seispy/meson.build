@@ -26,6 +26,7 @@ python_sources = [
     'stage.py',
     'parallel.py',
     'spool.py',
+    'su_pipe.py',
 ]
 
 module_path = 'seispy'

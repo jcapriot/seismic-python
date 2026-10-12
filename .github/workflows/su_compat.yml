@@ -1,0 +1,47 @@
+name: Seismic Unix compatibility
+
+# Builds the real Seismic Unix programs (upstream, pinned in tools/su_reference/build.sh) and runs the tests that
+# compare seispy against them: SU file/pipe IO and, as they are added, the per-program comparisons.
+# The wheel/abi3 tests of the other workflow do not need SU, and this one only needs linux.
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  su_compat:
+    name: seispy against Seismic Unix
+    runs-on: ubuntu-latest
+    env:
+      SU_REFERENCE_ROOT: /home/runner/su-reference
+      # make the comparisons fail, not skip, if SU is not there
+      SU_REQUIRED: "1"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Cache the Seismic Unix build
+        id: su-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SU_REFERENCE_ROOT }}
+          key: su-reference-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/su_reference/build.sh') }}
+
+      - name: Build Seismic Unix
+        if: steps.su-cache.outputs.cache-hit != 'true'
+        run: tools/su_reference/build.sh
+
+      - name: Install seispy
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python pytest .
+
+      - name: Run the tests against Seismic Unix
+        run: |
+          # from outside of the source tree, so that the installed package is what is imported
+          mkdir ../run && cp -r tests examples ../run && cd ../run
+          "$GITHUB_WORKSPACE/.venv/bin/python" -m pytest tests -ra

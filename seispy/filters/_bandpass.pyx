@@ -152,5 +152,4 @@ cdef class butterworth_bandpass(spyc.BaseTraceIterator):
             if self.high_cut:
                 su.su_bflowpass(self.zerophase, self.npoleshi, self.f3dbhi, n_sample, &data[0], &data[0])
 
-        cdef spyc.spy_trace_header *hdr = spyc.copy_of_hdr(trace.hdr)
-        return spyc.Trace.from_trace(hdr, data, True)
+        return trace.derive(data)

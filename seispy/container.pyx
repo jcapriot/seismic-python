@@ -137,6 +137,24 @@ cdef class Trace:
         return self.n_sample
 
     @property
+    def extra(self):
+        """A dict of the header words that have no field in ``header``, such as SU's ``fldr`` or ``tracl``.
+
+        They are carried along unchanged (``replace`` copies them) so that a trace can be read from an SU or SEG-Y
+        file, go through stages, and be written back with the words that seispy does not use intact. Stages do not
+        update them. Words that do have a field are never kept here.
+        """
+        if self._extra is None:
+            self._extra = {}
+        return self._extra
+
+    cdef Trace derive(self, float[::1] data):
+        cdef Trace tr = Trace.from_trace(copy_of_hdr(self.hdr), data, True)
+        if self._extra:
+            tr._extra = dict(self._extra)
+        return tr
+
+    @property
     def n_sample(self):
         return self.data.shape[0] // floats_per_sample(self.hdr.data_type)
 
@@ -246,6 +264,7 @@ cdef class Trace:
             float[::1] new_data
             dict header = self.hdr[0]
         offset = fields.pop('offset', None)  # (not a stored value, see below)
+        extra = fields.pop('extra', None)  # (carried words, merged into those of this trace)
         unknown = set(fields) - set(header)
         if unknown:
             raise TypeError(f"Unknown header values: {sorted(unknown)}, expected some of {sorted(header)}")
@@ -284,9 +303,16 @@ cdef class Trace:
         except Exception:
             free(hdr)
             raise
-        return Trace.from_trace(hdr, new_data, True)
+        cdef Trace tr = Trace.from_trace(hdr, new_data, True)
+        if self._extra or extra:
+            tr._extra = dict(self._extra) if self._extra else {}
+            if extra:
+                tr._extra.update(extra)
+        return tr
 
     def __reduce__(self):
+        if self._extra:
+            return _trace_from_bytes, (bytes(self.as_bytes()), dict(self._extra))
         return _trace_from_bytes, (bytes(self.as_bytes()),)
 
     def __getbuffer__(self, Py_buffer *buffer, int flags):
@@ -323,8 +349,11 @@ cdef class Trace:
         free(buffer.internal)
         buffer.internal = NULL
 
-def _trace_from_bytes(const unsigned char[::1] bys):
-    return Trace.from_bytes(bys)
+def _trace_from_bytes(const unsigned char[::1] bys, dict extra=None):
+    cdef Trace tr = Trace.from_bytes(bys)
+    if extra:
+        tr._extra = extra
+    return tr
 
 
 cdef int require_real(Trace tr) except -1:

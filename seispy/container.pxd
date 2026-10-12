@@ -58,9 +58,13 @@ cdef class Trace:
         spy_trace_header* hdr
         bint hdr_owner
         float[::1] data
+        dict _extra         # header words with no field in spy_trace_header (e.g. SU's fldr), carried along; None if empty
 
     @staticmethod
     cdef Trace from_trace(spy_trace_header *hdr, float[::1] data, bint hdr_owner=?)
+
+    # a trace with a copy of this one's header (and carried extras) around new samples
+    cdef Trace derive(self, float[::1] data)
 
     @staticmethod
     cdef Trace from_file_descriptor(FILE *fd)
