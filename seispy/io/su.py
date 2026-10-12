@@ -224,10 +224,12 @@ def trace_to_su_header(trace, dtype=None):
     tx, rx = hdr["tx_loc"], hdr["rx_loc"]
     row["counit"] = extra.get("counit", _NAME_TO_COUNIT[_coord_unit_name(hdr["coord_unit"])])
 
-    offset_only = extra.get("_su_offset_only") and tx[0] == 0 and tx[1] == 0 and rx[1] == 0 and not tx[2] and not rx[2]
+    # The coordinates of a trace read from data that had only an offset are made up (see su_header_to_trace), so
+    # whatever a stage did with them (a stack puts them at the midpoint) is not a position: write no coordinates.
+    offset_only = extra.get("_su_offset_only") and tx[1] == 0 and rx[1] == 0 and not tx[2] and not rx[2]
     if offset_only:
         row["scalco"] = int(extra.get("scalco", 0))
-        offset = round(rx[0])
+        offset = round(hdr["offset"])
         for name in _COORD_WORDS:
             row[name] = 0
         row["selev"] = row["gelev"] = 0

@@ -141,3 +141,18 @@ def test_ns_too_long_is_rejected():
     tr = Trace(np.zeros(70000, dtype=np.float32), d_sample=0.001)
     with pytest.raises(OverflowError):
         write_su([tr], io.BytesIO())
+
+
+def test_offset_only_trace_has_no_coordinates_after_a_stage_moves_it():
+    header = np.zeros(1, dtype=su_module._native_dtype())
+    header["ns"] = 8
+    header["dt"] = 4000
+    header["offset"] = 100
+    raw = header.tobytes() + np.zeros(8, dtype=np.float32).tobytes()
+    (tr,) = read_su(io.BytesIO(raw))
+    # (what stack does: both the source and the receiver go to the midpoint)
+    moved = tr.replace(tx_loc=[50.0, 0.0, 0.0], rx_loc=[50.0, 0.0, 0.0])
+    out = io.BytesIO()
+    write_su([moved], out)
+    (back,) = np.frombuffer(out.getvalue()[:240], dtype=su_module._native_dtype())
+    assert (back["sx"], back["gx"], back["sy"], back["gy"], back["offset"]) == (0, 0, 0, 0, 0)

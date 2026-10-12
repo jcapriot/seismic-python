@@ -1,0 +1,44 @@
+# Where a ported stage is known to differ from the SU program it ports.
+#
+# One table per case name (see cases.py):
+#   mode         "loose"        compared, with the looser rtol / atol and the ignore_words given here
+#                "expect_diff"  known to differ; the test fails once it no longer does (delete the entry)
+#                "skip"         not compared at all
+#   reason       why (mandatory): the bug in SU, or why the values can not be the same
+#   ref          where the divergence is documented in this repository (optional)
+#   rtol, atol, ignore_words
+#
+# Each reason has been checked against the SU source *and* against output of the program (see `verified`).
+# Header words that SU *rewrites* and seispy only *carries* (see seispy/io/su.py: tracl, muts, ...) are the common
+# kind. Stages do not recompute carried words; if one matters, the stage should set it in trace.extra.
+
+[sustack]
+mode = "loose"
+ignore_words = ["tracl"]
+reason = """SU numbers the stacked traces 1..n in tracl (sustack.c: `outtrace.tracl = newtracl++`). seispy does not \
+renumber, on purpose: a stack then depends on no trace before its gather, so it can be split between gathers across \
+workers (pmap). Its tracl is that of the first trace of the gather."""
+ref = "seispy/stacking/__init__.py"
+verified = "sustack.c, and output on data with 4 cdps: SU 1,2,3; seispy 1,9,17"
+
+[sustack-coords]
+mode = "loose"
+ignore_words = ["tracl", "sx", "gx"]
+reason = """tracl as in `sustack`. sx/gx: SU sets offset=0 but leaves sx and gx of the first trace of the gather \
+(sx=0, gx=100 with offset=0 is inconsistent). seispy has no stored offset (it is the distance between the source and \
+the receiver), so for a stack to have offset 0 both go to the midpoint of the first trace (sx=gx=50)."""
+ref = "seispy/stacking/__init__.py"
+verified = "sustack.c (only nhs, tracl, offset are set), and output on data with real sx/gx"
+
+[sumute]
+mode = "loose"
+ignore_words = ["muts"]
+reason = """SU records the mute time of each trace in muts, in milliseconds (sumute.c, mode 0). seispy has no such \
+header value, so muts stays what it was (a carried word)."""
+verified = "sumute.c, and output: muts=150,200,250 from SU, 0 from seispy; the data are identical"
+
+[sumute-below]
+mode = "loose"
+ignore_words = ["mute"]
+reason = """As `sumute` for mode=1 (mute below), where SU records the time in the `mute` word instead of `muts`."""
+verified = "sumute.c, and output: mute=550,600,650 from SU, 0 from seispy; the data are identical"
