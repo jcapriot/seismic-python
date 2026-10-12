@@ -80,3 +80,18 @@ def test_threads_can_each_transform_a_panel(name):
         results = list(pool.map(lambda _: samples(from_iterable(panel) | stage), range(16)))
     for got in results:
         npt.assert_array_equal(got, expected)
+
+
+def test_threads_can_each_estimate_residual_statics():
+    import concurrent.futures
+
+    from seispy.statics import resstat
+
+    panel = list(synlv(nt=101, nxm=12))
+    keyed = [t.replace(ensemble_number=i % 3 + 1, ensemble_trace_number=i // 3 + 1) for i, t in enumerate(panel)]
+    expected = resstat(keyed, ntpick=5, niter=2, cmp=lambda t: t.header['ensemble_trace_number'] % 2)
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        results = list(pool.map(
+            lambda _: resstat(keyed, ntpick=5, niter=2, cmp=lambda t: t.header['ensemble_trace_number'] % 2), range(16)
+        ))
+    assert all(r == expected for r in results)

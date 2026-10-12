@@ -388,6 +388,9 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.filters.fwmix`, `groll` | `sufwmix`, `sugroll` | the weighted mix of a gather in the frequency domain (one trace per gather), and ground roll suppression by the Karhunen-Loeve transform (the singular vectors of the panel) |
 | `seispy.operations.permute`, `recmo`, `simmat` | `supermute`, `surecmo`, `susimmat` | transpose a 3D cube of traces, compensate a moving streamer by mixing with the traces before, and the similarity matrix of two traces (cross-correlation, normalized, regression coefficient or angle) |
 | `seispy.stacking.recip`, `cvs4fowler` | `surecip`, `sucvs4fowler` | sum the traces of the same absolute offset, and constant velocity stacks of CDP gathers for the Fowler codes |
+| `seispy.statics.static`, `staticrrs` | `sustatic`, `sustaticrrs` | elevation statics from the elevations or from tables of statics (by geometry or key), residual and average refraction statics (SU's sinc interpolation; the statics are in seconds, in the header) |
+| `seispy.statics.randstat`, `addstatics` | `surandstat`, `suaddstatics` | random static errors on each trace, random surface consistent statics (SU's random numbers) |
+| `seispy.statics.resstat` | `suresstat` | surface consistent residual statics of sources and receivers by stack power maximization (the SU library function, on the traces in memory; it returns the statics, which `static(mode='keyed')` applies) |
 | `seispy.windowing.pad`, `matrix` | `supad`, `sumatrix` | zero traces for the missing values of a key in each panel, a matrix of trace zones by source and receiver |
 | `seispy.transforms.slowft`, `slowift` | `suslowft`, `suslowift` | Fourier transforms by the discrete sum, with no padding |
 | `seispy.transforms.phasevel`, `ccwt` | `suphasevel`, `succwt` | phase velocity dispersion image of a shot record, complex continuous wavelet transform (Morlet or Fourier kernel) |
@@ -418,6 +421,10 @@ from seispy import operations as op
 
 traces = synlv() | gain(tpow=2.0) | filter(f=[10, 20, 60, 80]) | gain(agc=True, wagc=0.2) | op.sgn()
 ```
+
+Programs that are not here yet: the programs of the csv Q-files and SPS header words of `su/main/statics` (`sushiftcsv`,
+`surescsv`, `sunszonecsv`, `sufarldcsv`, `sugetqcsv`), which are driven by files and by header words that traces here do
+not have.
 
 Programs that are left out on purpose: `succepstrum`, whose code transforms the one-sided spectrum with a complex FFT of
 a length that is not valid for it and does not set the length of the trace, so that it does not make the complex cepstrum

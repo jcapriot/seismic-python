@@ -834,6 +834,9 @@ cdef extern from "su.h" nogil:
         int ip1, float f1, float f2, float *out)
     void su_radon_xinterp(int nt, int nx, int ninterp, const float *data, float freq1, float freq2, int lagc,
         int lent, int lenx, int xopt, float dt, float *out)
+    void su_resstat(int nt, int ntraces, const float *data_in, const int *icmp, const int *irec, const int *ishot,
+        int ncmp, int nrec, int nshot, int ntpick, int niter, int mode, float perc, int sub, float *tsstat,
+        float *trstat)
     int su_fxdecon(int nsp, int ntrc, const float *tdatain, float *tdataout, float dt, float taper, float fmin,
         float fmax, float twlen, int ntrw, int ntrf)
     void su_gain_tpow_table(float *tpowfac, int nt, float tmin, float dt, float tpow, float tred)
