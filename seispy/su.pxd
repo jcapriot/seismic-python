@@ -846,6 +846,10 @@ cdef extern from "su.h" nogil:
         int nr2, float dr2, float fr2, int nsmooth, const float *data, float *num, float *den, float *nnz)
     void su_velan_cc(int nt, float dt, float ft, int nx, const float *offsets, const float *data, int nv, float dv,
         float fv, float smute, int dtratio, int nsmooth, int normalize, int selective, float tau, float pwr, float *sem)
+    int su_interp_traces(int nt, int nx, int ninterp, const float *data, float freq1, float freq2, int lagc, int lent,
+        int lenx, int xopt, float dt, int iopt, int deriv, int linear, float *out)
+    void su_ocext_offset(float offset, float offextr, float fmax, float sdmo, int nx, float dx, int nt, float dt,
+        float ft, const float *vrms_in, float *ptx)
     int su_fxdecon(int nsp, int ntrc, const float *tdatain, float *tdataout, float dt, float taper, float fmin,
         float fmax, float twlen, int ntrw, int ntrf)
     void su_gain_tpow_table(float *tpowfac, int nt, float tmin, float dt, float tpow, float tred)

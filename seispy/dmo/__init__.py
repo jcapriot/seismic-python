@@ -1,5 +1,6 @@
 """
-Dip moveout (``su/main/dip_moveout``): SUDMOFK, SUDMOTX, SUDMOFKCW, SUDMOVZ, SUDMOTIVZ and SUTIHALEDMO.
+Dip moveout (``su/main/dip_moveout``): SUDMOFK, SUDMOTX, SUDMOFKCW, SUDMOVZ, SUDMOTIVZ and SUTIHALEDMO, and SUOCEXT (extrapolation
+to a smaller offset by offset continuation, from ``su/main/interp_extrap``, which is the DMO of SUDMOFK with the offset to go to).
 
 The input is NMO corrected, in common-offset gathers: the traces of a gather are the run of traces that have the same
 ``offset`` (SU's rule: one gather ends and another begins when the offset changes), and the cdp of a trace is its
@@ -18,7 +19,7 @@ from ..container import as_trace_iterator, from_iterable
 from ..stage import stage
 from . import _kernels
 
-__all__ = ['dmofk', 'dmotx', 'dmofkcw', 'dmovz', 'dmotivz', 'tihaledmo']
+__all__ = ['dmofk', 'dmotx', 'dmofkcw', 'dmovz', 'dmotivz', 'tihaledmo', 'ocext']
 
 F32 = np.float32
 
@@ -359,3 +360,33 @@ def _tihaledmo(upstream, *, nxmax, option=1, dx=50.0, v=1500.0, h=200.0, ntpad=0
 # dx : the midpoint interval; v : the velocity, which limits the aperture; h : the half offset; ntpad, nxpad : the samples
 # and traces of padding (h / dx traces by default)
 tihaledmo = stage(_tihaledmo, parallelism='serial', name='tihaledmo', validate=True)
+
+
+# ------------------------------------------------------------------------------------------------------------ ocext
+def _ocext(upstream, *, cdpmin, cdpmax, dxcdp, noffmix, offextr, tdmo=None, vdmo=None, sdmo=1.0, fmax=None):
+    def make_state(trace, nt, dt, ft):
+        vrms = _kernels.vrms(np.atleast_1d(np.asarray(0.0 if tdmo is None else tdmo, dtype=F32)),
+                             np.atleast_1d(np.asarray(1500.0 if vdmo is None else vdmo, dtype=F32)), nt, dt, ft)
+        top = float(fmax) if fmax is not None else 0.5 / dt
+        # (velocities that are not increasing in time are checked like those of dmofk)
+        _velocity_function(tdmo, vdmo, nt, dt, 'vdmo', 1500.0)
+
+        def apply(gather, offset):
+            _kernels.ocext_offset(gather, offset, float(offextr), top, float(sdmo), cdpmax - cdpmin + 1, float(dxcdp), dt,
+                                  ft, vrms)
+
+        return apply
+
+    stream = _fk_family(upstream, 'ocext', cdpmin, cdpmax, dxcdp, noffmix, make_state)
+    # the traces of the output are at the offset that is extrapolated to
+    return from_iterable((t.replace(offset=float(offextr)) for t in stream))
+
+
+# SUOCEXT: extrapolation of common-offset gathers to a smaller offset (Theodoro and Larner), by offset continuation in the
+# f-k domain: the DMO of dmofk, to the offset offextr instead of to zero offset, with a term for the amplitudes
+#
+# cdpmin, cdpmax, dxcdp, noffmix, tdmo, vdmo, sdmo, fmax : as for dmofk
+# offextr : the offset (m) to extrapolate to
+#
+# The output traces have the offset ``offextr``.
+ocext = stage(_ocext, parallelism='serial', name='ocext', validate=True)
