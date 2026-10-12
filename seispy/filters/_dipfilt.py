@@ -7,6 +7,7 @@ slope ``k / w``, and transformed back.
 """
 import numpy
 
+from .. import _fft
 from ..container import as_trace_iterator, from_iterable
 from ..stage import Stage
 
@@ -39,27 +40,30 @@ def _dipfilt(upstream, *, slopes=0.0, amps=None, bias=0.0, dt=None, dx=None):
             raise ValueError("dt field is zero and dt is not given")
         if not dx:
             raise ValueError("dx is needed (the program takes it from the header word d2, which traces here do not have)")
-        data = numpy.stack([numpy.asarray(t) for t in traces]).astype(numpy.float64)
+        data = numpy.stack([numpy.asarray(t) for t in traces]).astype(numpy.float32)
 
-        ntfft = nt + nt % 2
+        # the lengths of the transforms are those of the program (the traces are padded with zeros to them)
+        ntfft = _fft.good_length(nt)
+        nxfft = _fft.good_length(nx, real=False)
         nw = ntfft // 2 + 1
         dw = 2.0 * numpy.pi / (ntfft * sample_dt)
-        dk = 2.0 * numpy.pi / (nx * dx)
+        dk = 2.0 * numpy.pi / (nxfft * dx)
         w = numpy.arange(nw) * dw
-        x = numpy.arange(nx) * dx
+        x = numpy.arange(nxfft) * dx
         # the SU transform in time has exp(+i w t) in it, the one across the traces exp(-i k x)
-        spectrum = numpy.conj(numpy.fft.rfft(data, ntfft, axis=1))
+        spectrum = _fft.rfft(data, ntfft, axis=1, sign=1)
+        spectrum = numpy.concatenate([spectrum, numpy.zeros((nxfft - nx, nw), dtype=numpy.complex64)])
         # the bias: a linear moveout that is removed by a phase shift, and restored after filtering
         shift = numpy.exp(-1j * x[:, None] * w[None, :] * bias)
-        spectrum = numpy.fft.fft(spectrum * shift, axis=0)
-        k = numpy.fft.fftfreq(nx, d=1.0 / nx) * dk  # (ik for ik <= nk/2, ik - nk above)
+        spectrum = _fft.fft(spectrum * shift, axis=0, sign=-1)
+        k = numpy.fft.fftfreq(nxfft, d=1.0 / nxfft) * dk  # (ik for ik <= nk/2, ik - nk above)
         # (the frequency of the first sample is not 0, to avoid dividing by it)
         w_nonzero = 1e-6 * dw + w
         slope = k[:, None] / w_nonzero[None, :] + bias
         amp = numpy.interp(slope, slopes, amps)
-        spectrum = numpy.fft.ifft(spectrum * amp, axis=0)
-        spectrum = spectrum / shift
-        out = numpy.fft.irfft(numpy.conj(spectrum), ntfft, axis=1)[:, :nt].astype(numpy.float32)
+        spectrum = _fft.ifft(spectrum * amp, axis=0, sign=1)
+        spectrum = (spectrum / shift)[:nx]
+        out = _fft.irfft(spectrum, ntfft, axis=1, sign=-1)[:, :nt]
         for trace, row in zip(traces, out):
             yield trace.replace(row)
 

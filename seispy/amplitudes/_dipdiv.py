@@ -2,7 +2,7 @@
 SUDIPDIVCOR: dip-dependent divergence (spreading) correction (``su/main/amplitudes``).
 
 The correction is made in the wavenumber domain: the traces of the stream (which are the panel) are Fourier transformed in x
-(numpy's FFT, of the length that SU would pad them to), each wavenumber is corrected by the dip filter of the SU library
+(``seispy._fft``, of the length that SU pads them to), each wavenumber is corrected by the dip filter of the SU library
 (``_dipdivcor.pyx``), and they are transformed back.
 
 Where the program plainly does not do what its documentation says this does what the documentation says: the rms velocity
@@ -13,6 +13,7 @@ import math
 
 import numpy
 
+from .. import _fft
 from ..container import as_trace_iterator, from_iterable
 from ..stage import Stage
 from . import _dipdivcor as _c
@@ -78,14 +79,14 @@ def _dipdivcor(upstream, *, dxcdp, np=50, tmig=0.0, vmig=1500.0, vt=None, conv=F
             dk = F32(2.0 * math.pi / (nxfft * dx))
             padded = numpy.zeros((nxfft, nt), dtype=numpy.float32)
             padded[:nx] = x
-            ptk = numpy.ascontiguousarray(numpy.fft.rfft(padded, axis=0), dtype=numpy.complex64)
+            ptk = _fft.rfft(padded, axis=0, sign=-1)
             # the wavenumbers that are corrected, and the sampling of the slopes
             nkmax = min(nk, _nint(math.pi / dt / v0 / dk))
             dpx = F32(1.0 / (np - 1) / v0)
             # wavenumber 0
             ptk[0] *= divcor[0]
             _c.dip_filter(ptk, dk, dpx, F32(dt), np, ntfft, nkmax, divcor)
-            out = numpy.fft.irfft(ptk, n=nxfft, axis=0)[:nx]
+            out = _fft.irfft(ptk, nxfft, axis=0, sign=1)[:nx]
         out = numpy.ascontiguousarray(out, dtype=numpy.float32)
         for trace, row in zip(traces, out):
             yield trace.replace(row)

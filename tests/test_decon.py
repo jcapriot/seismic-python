@@ -2,6 +2,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
+from seispy import _fft
 from seispy.container import Trace, from_iterable
 from seispy.decon import pef, shape
 from seispy.filters import minphase, tvband
@@ -227,8 +228,9 @@ def test_minphase_puts_the_energy_as_early_as_possible():
     x[0, 20:28] = RNG.normal(size=8)  # a wavelet that has its energy in the middle
     (out,) = run(minphase(), traces(x))
     y = np.asarray(out)
-    # the same amplitude spectrum (so the same energy), and never less of it by any time
-    npt.assert_allclose(np.abs(np.fft.rfft(y)), np.abs(np.fft.rfft(x[0])), rtol=5e-3, atol=2e-3)
+    # the same amplitude spectrum (so the same energy), and never less of it by any time (the transform is of the trace
+    # padded with zeros, and the wavelet is cut to the length of the trace, so a little of the tail is missing)
+    npt.assert_allclose(np.abs(np.fft.rfft(y)), np.abs(np.fft.rfft(x[0])), rtol=4e-2, atol=2e-2)
     assert (y ** 2).sum() == pytest.approx((x[0] ** 2).sum(), rel=1e-2)
     assert (np.cumsum(y ** 2) >= np.cumsum(x[0] ** 2) - 1e-3).all()
     # and it is minimum phase for the first sample being the biggest, for a wavelet like that
@@ -283,7 +285,8 @@ def test_tvband_with_one_filter_is_that_filter():
     # from the center of the one before to the center of the one after, so a filter in the middle of a trace is applied
     # to a shorter part of it.)
     (out,) = run(tvband([0.0], [corners]), traces(x))
-    expected = np.fft.irfft(np.fft.rfft(x[0]) * band_filter_reference(corners, n, DT), n)
+    nfft = _fft.good_length_within(n, 2 * n)  # (the trace is padded as the program does)
+    expected = np.fft.irfft(np.fft.rfft(x[0], nfft) * band_filter_reference(corners, nfft, DT), nfft)[:n]
     npt.assert_allclose(np.asarray(out), expected, rtol=1e-3, atol=1e-4)
     # one 4-tuple can be given as it is
     (same,) = run(tvband([0.0], corners), traces(x))
@@ -310,9 +313,10 @@ def test_tvband_changes_with_time():
     assert 0.05 < amplitude(middle, 15) < 0.95
 
 
-def tvband_reference(x, tf, filters, tmin, dt):
+def tvband_reference(x, tf, filters, tmin, dt, nfft=None):
     """The program's way of putting it together"""
     n = len(x)
+    nfft = n if nfft is None else nfft
 
     def nint(v):
         return int(v + 0.5) if v > 0 else int(v - 0.5)
@@ -331,7 +335,7 @@ def tvband_reference(x, tf, filters, tmin, dt):
         data = np.zeros(n)
         for i in range(ext[j], ext[j + 2] + 1):
             data[i] = x[i]
-        sub.append(np.fft.irfft(np.fft.rfft(data) * filt[j], n))
+        sub.append(np.fft.irfft(np.fft.rfft(data, nfft) * filt[j], nfft)[:n])
     out = np.zeros(n)
     for j in range(len(itf) - 1):
         for i in range(itf[j], itf[j + 1] + 1):
@@ -346,8 +350,9 @@ def test_tvband_matches_the_programs_composition():
     tf = [0.3, 0.7]
     corners = [[5.0, 10.0, 30.0, 40.0], [20.0, 25.0, 60.0, 80.0]]
     (out,) = run(tvband(tf, corners), traces(x, sample_start=0.1))
-    filters = [band_filter_reference(c, n, DT) for c in corners]
-    expected = tvband_reference(x[0].astype(np.float64), tf, filters, 0.1, DT)
+    nfft = _fft.good_length_within(n, 2 * n)
+    filters = [band_filter_reference(c, nfft, DT) for c in corners]
+    expected = tvband_reference(x[0].astype(np.float64), tf, filters, 0.1, DT, nfft)
     npt.assert_allclose(np.asarray(out), expected, rtol=1e-3, atol=2e-4)
 
 

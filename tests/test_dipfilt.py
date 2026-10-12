@@ -9,8 +9,9 @@ from seispy.container import Trace, from_iterable
 from seispy.filters import dipfilt
 
 DT = 0.004
-NT, NX, DX = 200, 32, 10.0  # df = 1.25 Hz, dK = 1 / 320 per m
-F0 = 25.0  # (bin 20)
+# (lengths of SU's FFT, which does not pad them: the waves are on the grid of the transforms)
+NT, NX, DX = 240, 30, 10.0  # df = 1 / (240 dt) Hz, dK = 1 / 300 per m
+F0 = 20.0 / (NT * DT)  # (bin 20)
 K0 = 5.0 / (NX * DX)
 SLOPE = K0 / F0  # (the slope delta_t / delta_x of cos(2 pi (F t - K x)))
 

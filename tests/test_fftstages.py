@@ -78,8 +78,9 @@ def test_zerophase():
     w = causal_wavelet()
     (out,) = run(zerophase(t0=0.1), traces(w))
     y = np.asarray(out)
-    # the amplitude spectrum is the same
-    npt.assert_allclose(np.abs(np.fft.rfft(y)), np.abs(np.fft.rfft(w)), rtol=1e-3, atol=1e-4 * np.abs(np.fft.rfft(w)).max())
+    # the amplitude spectrum is the same (the transform is of the trace padded with zeros, and the wavelet is cut to the
+    # length of the trace: the early side of it that wraps around is lost)
+    npt.assert_allclose(np.abs(np.fft.rfft(y)), np.abs(np.fft.rfft(w)), rtol=5e-2, atol=2e-2 * np.abs(np.fft.rfft(w)).max())
     # and the wavelet is symmetric about sample t0 / dt = 25, which is time 0
     assert np.argmax(np.abs(y)) == 25
     for k in range(1, 15):
@@ -99,7 +100,8 @@ def test_zerophase_dt_and_errors():
 
 
 # ---------------------------------------------------------------------------------------------------------- frac
-NF, DF = 200, 0.005  # 1 second, so a 5 Hz sine fits exactly in a whole number of periods
+# (1 second, so a 5 Hz sine fits exactly in a whole number of periods; 240 is a length that SU's FFT does not pad)
+NF, DF = 240, 1.0 / 240
 TF = np.arange(NF) * DF
 SINE = np.sin(2 * np.pi * 5 * TF).astype(np.float32)
 COSINE = np.cos(2 * np.pi * 5 * TF).astype(np.float32)
@@ -112,7 +114,7 @@ def test_frac_differentiates_and_integrates():
     (i,) = run(frac(power=-1), traces(SINE, dt=DF))
     npt.assert_allclose(np.asarray(i), -COSINE / OMEGA, atol=1e-5)
     (second,) = run(frac(power=2), traces(SINE, dt=DF))
-    npt.assert_allclose(np.asarray(second), -(OMEGA ** 2) * SINE, atol=5e-3)
+    npt.assert_allclose(np.asarray(second), -(OMEGA ** 2) * SINE, atol=0.1)  # (single precision, values of 1000)
     # the sign flips the derivative
     (flipped,) = run(frac(power=1, sign=1.0), traces(SINE, dt=DF))
     npt.assert_allclose(np.asarray(flipped), -OMEGA * COSINE, atol=2e-3)

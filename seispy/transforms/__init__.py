@@ -14,6 +14,7 @@ kernel, which is the conjugate of numpy's, so what SU multiplies a spectrum by i
 """
 import numpy as np
 
+from .. import _fft as _spyfft
 from ..stage import per_trace, stage
 from . import _hilbert
 
@@ -43,10 +44,15 @@ def _zerophase(upstream, *, t0=1.0, dt=None):
             return trace
         # (as SU does, .004 if there is nothing at all)
         sample_dt = trace.d_sample or dt or 0.004
-        spectrum = np.fft.rfft(np.asarray(trace), n)
-        omega = 2.0 * np.pi * np.arange(n // 2 + 1) / (n * sample_dt)
-        # the amplitude spectrum with the phase of a spike at t0
-        y = np.fft.irfft(np.abs(spectrum) * np.exp(-1j * omega * t0), n)
+        # (padded as suzerophase does, to a length that is fast for the transform)
+        n_fft = _spyfft.good_length_within(n, 2 * n, real=False)
+        spectrum = _spyfft.fft(np.asarray(trace), n_fft, sign=1)
+        half = n_fft // 2 + 1
+        omega = 2.0 * np.pi * np.arange(half) / (n_fft * sample_dt)
+        # the amplitude spectrum with the phase of a spike at t0, and the negative frequencies as their conjugates
+        spectrum[:half] = (np.abs(spectrum[:half]) * np.exp(1j * omega * t0)).astype(np.complex64)
+        spectrum[half:] = np.conj(spectrum[n_fft - np.arange(half, n_fft)])
+        y = _spyfft.ifft(spectrum, sign=-1).real[:n]
         # (the peak is at sample t0 / dt, which is time 0)
         return trace.replace(y.astype(np.float32), sample_start=-t0)
 
@@ -100,14 +106,11 @@ def _fft(upstream, *, sign=1, dt=None):
 
     def fft_trace(trace):
         n = trace.n_sample
-        # (an even number of samples, so that the inverse knows how many there were)
-        n_fft = n + n % 2
+        # (padded as sufft does, to an even length that is fast for the transform)
+        n_fft = _spyfft.good_length_within(n, 2 * n)
         # (as SU does, .004 if there is nothing at all)
         sample_dt = trace.d_sample or dt or 0.004
-        spectrum = np.fft.rfft(np.asarray(trace), n_fft)
-        if sign == 1:
-            # the SU transform with sign = 1 has exp(+i w t) in it, numpy's has exp(-i w t)
-            spectrum = np.conj(spectrum)
+        spectrum = _spyfft.rfft(np.asarray(trace), n_fft, sign=sign)
         return trace.replace(
             spectrum.astype(np.complex64), d_sample=1.0 / (n_fft * sample_dt), sample_start=0.0,
             sampling_domain=_FOURIER,
@@ -122,8 +125,9 @@ def _fft(upstream, *, sign=1, dt=None):
 # dt : sample interval (s) for traces that do not have one, default .004
 #
 # The frequency traces are marked as being in the Fourier domain, with the frequency spacing as their sample interval
-# and 0 as their first sample. They have nfft / 2 + 1 samples, where nfft is the number of samples of the time trace,
-# made even if it was odd (sufft pads the traces to a length that its FFT is fast for).
+# and 0 as their first sample. They have nfft / 2 + 1 samples, where nfft is the number of samples of the time trace
+# padded with zeros to the length that the FFT is fast for, from n to 2 n (``seispy._fft.good_length_within``), as sufft
+# does.
 fft = stage(_fft, parallelism='trace', name='fft', validate=True)
 
 
@@ -140,8 +144,7 @@ def _ifft(upstream, *, sign=-1):
             raise ValueError("ifft needs traces with at least 2 frequency samples.")
         n = 2 * (n_freq - 1)
         spectrum = np.asarray(trace)
-        # (the inverse of the transform with sign = 1 is the one with sign = -1, which is numpy's)
-        y = np.fft.irfft(np.conj(spectrum) if sign == -1 else spectrum, n)
+        y = _spyfft.irfft(spectrum, n, sign=sign)
         df = trace.d_sample
         return trace.replace(
             y.astype(np.float32), d_sample=1.0 / (n * df) if df else 0.0, sample_start=0.0, sampling_domain=_UNIT,

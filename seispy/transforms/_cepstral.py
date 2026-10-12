@@ -3,9 +3,9 @@ The complex logarithm of the spectrum and the cepstrum: SUCLOGFFT, SUICLOGFFT, S
 spectrum flattening of SUWFFT (``su/main/transforms``).
 
 ``clogfft`` makes a complex trace (the log of the amplitude spectrum, and the unwrapped phase, as its real and imaginary
-parts), and ``iclogfft`` undoes it. Like the other transforms they use numpy's FFT of the trace as it is, made an even
-length, where the SU programs pad it to a length that their FFT is fast for (and note that SU's forward kernel is
-``exp(+i w t)``, the conjugate of numpy's, which is why the spectrum is conjugated for ``sign=1``).
+parts), and ``iclogfft`` undoes it. Like the other transforms they use the FFT of seispy (``seispy._fft``, SU's prime-factor
+FFT) of the trace padded as the SU programs do (``npfaro`` with a look ahead of twice the trace), with ``exp(sign i w t)``
+as the kernel.
 
 Not supported: ``sucepstrum``'s ``smooth`` (damped least squares smoothing of the phase) and ``succepstrum`` (the complex
 cepstrum), which does not finish what it does: it transforms the half spectrum as if it was a signal, and does not
@@ -14,6 +14,7 @@ length, here it is the length of the transform that it is meant to have.
 """
 import numpy as np
 
+from .. import _fft
 from ..stage import per_trace, stage
 from . import _FOURIER, _UNIT, _kernels, _unwrap
 
@@ -30,18 +31,17 @@ def _check_sign(**signs):
 
 def _spectrum(x, n_fft, sign):
     """The spectrum of the SU transform that has exp(sign i w t) in its kernel (the real part, and the imaginary part)"""
-    spectrum = np.fft.rfft(x, n_fft)
-    return np.conj(spectrum) if sign == 1 else spectrum
+    return _fft.rfft(x, n_fft, sign=sign)
 
 
 def _real_trace(spectrum, n_fft, sign):
     """The (normalized) inverse of the transform that has exp(sign i w t) in its kernel: SU's inverse of sign = 1 is -1"""
-    return np.fft.irfft(np.conj(spectrum) if sign == -1 else spectrum, n_fft)
+    return _fft.irfft(spectrum, n_fft, sign=sign)
 
 
 def _log_spectrum(x, n_fft, sign, d1, mode, unwrap, trend, zeromean):
     """log|F| and the (unwrapped) phase of the spectrum of a trace"""
-    spectrum = np.ascontiguousarray(_spectrum(x.astype(np.float64), n_fft, sign), dtype=np.complex64)
+    spectrum = np.ascontiguousarray(_spectrum(x, n_fft, sign), dtype=np.complex64)
     log_amp, phase = _kernels.clogfft_spectrum(spectrum)  # (the function of the SU library)
     if unwrap:
         if mode == 'suphase':
@@ -68,7 +68,7 @@ def _clogfft(upstream, *, sign=1, mode='ouphase', unwrap=1.0, trend=True, zerome
 
     def clogfft_trace(trace):
         n = trace.n_sample
-        n_fft = n + n % 2
+        n_fft = _fft.good_length_within(n, 2 * n)
         sample_dt = trace.d_sample or dt or 0.004  # (as SU does, .004 if there is nothing at all)
         d1 = 1.0 / (n_fft * sample_dt)
         log_amp, phase = _log_spectrum(np.asarray(trace), n_fft, sign, d1, mode, unwrap, trend, zeromean)
@@ -136,7 +136,7 @@ def _cepstrum(upstream, *, sign1=1, sign2=-1, mode='ouphase', unwrap=1.0, trend=
 
     def cepstrum_trace(trace):
         n = trace.n_sample
-        n_fft = n + n % 2
+        n_fft = _fft.good_length_within(n, 2 * n)
         sample_dt = trace.d_sample or dt or 0.004
         d1 = 1.0 / (n_fft * sample_dt)
         log_amp, phase = _log_spectrum(np.asarray(trace), n_fft, sign1, d1, mode, unwrap, trend, zeromean)
@@ -159,10 +159,10 @@ def _icepstrum(upstream, *, sign1=1, sign2=-1, sym=False, dt=None):
 
     def icepstrum_trace(trace):
         n = trace.n_sample
-        n_fft = n + n % 2
+        n_fft = _fft.good_length_within(n, 2 * n)
         sample_dt = trace.d_sample or dt or 0.004
         # the transform of the cepstrum is the complex log spectrum (log amplitude, phase), which is then exponentiated
-        log_spectrum = np.ascontiguousarray(_spectrum(np.asarray(trace).astype(np.float64), n_fft, sign1), dtype=np.complex64)
+        log_spectrum = np.ascontiguousarray(_spectrum(np.asarray(trace), n_fft, sign1), dtype=np.complex64)
         spectrum = _kernels.iclogfft_spectrum(log_spectrum, sym)
         out = _real_trace(spectrum, n_fft, sign2)
         start = -(trace.header['sample_start'] + n_fft * sample_dt / 2.0) if sym else trace.header['sample_start']
@@ -186,9 +186,9 @@ def _wfft(upstream, *, w0=0.75, w1=1.0, w2=0.75, sign=1, dt=None):
 
     def wfft_trace(trace):
         n = trace.n_sample
-        n_fft = n + n % 2
+        n_fft = _fft.good_length_within(n, 2 * n)
         sample_dt = trace.d_sample or dt or 0.004
-        spectrum = np.ascontiguousarray(_spectrum(np.asarray(trace).astype(np.float64), n_fft, sign), dtype=np.complex64)
+        spectrum = np.ascontiguousarray(_spectrum(np.asarray(trace), n_fft, sign), dtype=np.complex64)
         flat = _kernels.wfft_flatten(spectrum, w0, w1, w2)  # (the function of the SU library)
         return trace.replace(
             flat, d_sample=1.0 / (n_fft * sample_dt), sample_start=0.0, sampling_domain=_FOURIER,

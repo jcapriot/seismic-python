@@ -1,11 +1,13 @@
 """
 Filters that change the amplitude and phase of the Fourier transform of each trace: SUFRAC and SUPHASE
-(``su/main/filters``). Both use numpy's Fourier transforms of the trace as it is, where the SU programs zero-pad it for
-their prime-factor FFT. What they do to a spectrum is a function of the SU library (``_kernels.pyx``). The SU transforms have ``exp(+i w t)`` as their forward kernel, which is the conjugate of
-numpy's, so what SU multiplies a spectrum by is conjugated here.
+(``su/main/filters``). Both use the FFT of seispy (``seispy._fft``, SU's prime-factor FFT) of the trace zero-padded as the
+programs do, to the length that is fast for it (``npfaro`` with a look ahead of twice the trace); the transform has
+``exp(+i w t)`` as its forward kernel, as in the programs. What they do to a spectrum is a function of the SU library
+(``_kernels.pyx``).
 """
 import numpy as np
 
+from .. import _fft
 from ..stage import per_trace
 from . import _kernels
 
@@ -29,10 +31,10 @@ def _frac(upstream, *, power=0.0, sign=-1.0, phasefac=0.0, dt=None):
         sample_dt = trace.d_sample or dt
         if not sample_dt:
             raise ValueError("The trace has no sample interval, and no `dt` was given.")
-        # (the SU transform has the conjugate of numpy's kernel)
-        spectrum = np.conj(np.fft.rfft(np.asarray(trace), n)).astype(np.complex64)
-        y = np.fft.irfft(np.conj(spectrum * filter_for(n, sample_dt)), n)
-        return trace.replace(y.astype(np.float32))
+        nfft = _fft.good_length_within(n, 2 * n)
+        spectrum = _fft.rfft(np.asarray(trace), nfft)
+        y = _fft.irfft(spectrum * filter_for(nfft, sample_dt), nfft)[:n]
+        return trace.replace(y)
 
     return per_trace(upstream, frac_trace)
 
@@ -59,11 +61,11 @@ def _phase(upstream, *, a=0.0, b=180.0 / np.pi, c=0.0):
         n = trace.n_sample
         if n == 0:
             return trace
-        # as the SU transform has it: the numpy transform of a real trace is the conjugate of that
-        spectrum = np.ascontiguousarray(np.conj(np.fft.rfft(np.asarray(trace), n)), dtype=np.complex64)
+        nfft = _fft.good_length_within(n, 2 * n)
+        spectrum = _fft.rfft(np.asarray(trace), nfft)
         _kernels.phase_spectrum(spectrum, a_radians, b_radians, c)
-        y = np.fft.irfft(np.conj(spectrum), n)
-        return trace.replace(y.astype(np.float32))
+        y = _fft.irfft(spectrum, nfft)[:n]
+        return trace.replace(y)
 
     return per_trace(upstream, phase_trace)
 

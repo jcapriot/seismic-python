@@ -5,6 +5,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
+from seispy import _fft
 from seispy.container import Trace, from_iterable
 from seispy.transforms import specfk, specfx, speck1k2
 
@@ -26,13 +27,13 @@ def amplitudes(out):
 
 # ------------------------------------------------------------------------------------------------------------ specfx
 def test_specfx_finds_a_sine_at_its_frequency():
-    nt = 250  # df = 1 Hz
+    nt = 240  # df = 1 / 0.96 Hz, and a length that SU's FFT does not pad
     t = np.arange(nt) * DT
     (out,) = run(specfx(), [np.cos(2 * np.pi * 25.0 * t)])
     a = np.asarray(out)
     assert a.shape == (nt // 2 + 1,)
-    assert np.argmax(a) == 25
-    assert a[25] == pytest.approx(nt / 2, rel=1e-4)
+    assert np.argmax(a) == 24
+    assert a[24] == pytest.approx(nt / 2, rel=1e-4)
     assert out.d_sample == pytest.approx(1.0 / (nt * DT))
     assert out.header['sample_start'] == 0.0 and out.header['sampling_domain'] == FOURIER
 
@@ -42,18 +43,21 @@ def test_specfx_halves_the_zero_frequency():
     assert np.asarray(out)[0] == pytest.approx(50.0)  # (the sum is 100)
 
 
-def test_specfx_makes_odd_traces_even_first():
+def test_specfx_pads_the_traces_for_the_fft():
     (out,) = run(specfx(), [np.random.default_rng(1).normal(size=101)])
-    assert out.n_sample == 52 and out.d_sample == pytest.approx(1.0 / (102 * DT))
+    nfft = _fft.good_length_within(101, 202)
+    assert nfft >= 102 and nfft % 2 == 0
+    assert out.n_sample == nfft // 2 + 1 and out.d_sample == pytest.approx(1.0 / (nfft * DT))
 
 
 def test_specfx_uses_dt_for_traces_without_one():
     x = np.random.default_rng(1).normal(size=100)
     (out,) = run(specfx(dt=0.002), [x], dt=0.0)
-    assert out.d_sample == pytest.approx(1.0 / (100 * 0.002))
+    nfft = _fft.good_length_within(100, 200)
+    assert out.d_sample == pytest.approx(1.0 / (nfft * 0.002))
     with pytest.warns(UserWarning):
         (out,) = run(specfx(), [x], dt=0.0)
-    assert out.d_sample == pytest.approx(1.0 / (100 * 0.004))
+    assert out.d_sample == pytest.approx(1.0 / (nfft * 0.004))
 
 
 def test_specfx_rejects_complex_traces():
@@ -69,15 +73,16 @@ def plane_wave(nx, nt, dx, f0, k0):
 
 
 def test_specfk_peak_is_at_the_frequency_and_wavenumber():
-    nx, nt, dx = 16, 200, 10.0  # dk = 1 / (16 10), df = 1 / (200 .004) = 1.25 Hz
-    f0, k0 = 20.0, 3.0 / (nx * dx)
+    nx, nt, dx = 16, 240, 10.0  # dk = 1 / (16 10), df = 1 / (240 .004) Hz (lengths that SU's FFT does not pad)
+    df = 1.0 / (nt * DT)
+    f0, k0 = 20 * df, 3.0 / (nx * dx)
     out = run(specfk(dx=dx), plane_wave(nx, nt, dx, f0, k0))
     a = amplitudes(out)
     assert a.shape == (nx, nt // 2 + 1)
     row, col = np.unravel_index(np.argmax(a), a.shape)
     # the wavenumber of trace i is -1 / (2 dx) + i / (nx dx)
-    assert col == round(f0 / (1.25)) and row == nx // 2 + 3
-    assert out[0].d_sample == pytest.approx(1.25) and out[0].header['sampling_domain'] == FOURIER
+    assert col == 20 and row == nx // 2 + 3
+    assert out[0].d_sample == pytest.approx(df) and out[0].header['sampling_domain'] == FOURIER
     assert [t.header['trace_id'] for t in out] == list(range(1, nx + 1))
     # the opposite direction of travel is at the opposite wavenumber
     back = amplitudes(run(specfk(dx=dx), plane_wave(nx, nt, dx, f0, -k0)))
