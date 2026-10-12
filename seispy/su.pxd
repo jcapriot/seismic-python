@@ -850,6 +850,12 @@ cdef extern from "su.h" nogil:
         int lenx, int xopt, float dt, int iopt, int deriv, int linear, float *out)
     void su_ocext_offset(float offset, float offextr, float fmax, float sdmo, int nx, float dx, int nt, float dt,
         float ft, const float *vrms_in, float *ptx)
+    void su_polar_station(int nt, int iwl, int iwin, float rlq, int rl, int theta, int phi, int tau, int ellip,
+        int pln, int f1, int l1, int amp, int dir, float fangle, const float *data, float *out)
+    void su_eipofi_station(int nt, int iwl, float pwr, int cubic, float *data, float *polar)
+    float su_alford_angle(const float *S11, const float *S12, const float *S21, const float *S22, float dt, int itmin,
+        int itmax, float ang_inc, int taper, float *quality, float *inputquality, float *lag, float *xcorr)
+    void su_alford_rotate(float *S11, float *S12, float *S21, float *S22, float theta, int nt, int itmin, int taper)
     int su_fxdecon(int nsp, int ntrc, const float *tdatain, float *tdataout, float dt, float taper, float fmin,
         float fmax, float twlen, int ntrw, int ntrf)
     void su_gain_tpow_table(float *tpowfac, int nt, float tmin, float dt, float tpow, float tred)
