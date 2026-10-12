@@ -837,6 +837,15 @@ cdef extern from "su.h" nogil:
     void su_resstat(int nt, int ntraces, const float *data_in, const int *icmp, const int *irec, const int *ishot,
         int ncmp, int nrec, int nshot, int ntpick, int niter, int mode, float perc, int sub, float *tsstat,
         float *trstat)
+    void su_tivel_table(float a, float b, float e, float d, float maxangle, int nangle, int normalize, float *p,
+        float *v, float *dv, float *d2v, float *vnmo)
+    float su_tivel_vnmoweak(float a, float b, float e, float d, float p)
+    void su_vel2df_accumulate(int nt, float dt, float ft, float offset, float tn_zero, int nv, float dv, float fv,
+        int nvh, float dvh, float fvh, int nsmooth, const float *data, float *num, float *den, float *nnz)
+    void su_relanan_accumulate(int nz, float dz, float fz, float half_offset, float Z, int nr1, float dr1, float fr1,
+        int nr2, float dr2, float fr2, int nsmooth, const float *data, float *num, float *den, float *nnz)
+    void su_velan_cc(int nt, float dt, float ft, int nx, const float *offsets, const float *data, int nv, float dv,
+        float fv, float smute, int dtratio, int nsmooth, int normalize, int selective, float tau, float pwr, float *sem)
     int su_fxdecon(int nsp, int ntrc, const float *tdatain, float *tdataout, float dt, float taper, float fmin,
         float fmax, float twlen, int ntrw, int ntrf)
     void su_gain_tpow_table(float *tpowfac, int nt, float tmin, float dt, float tpow, float tred)
