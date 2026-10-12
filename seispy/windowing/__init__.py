@@ -21,10 +21,10 @@ from ..stage import Stage, header_value as _key_value, per_trace
 from . import _mutec
 
 __all__ = ['mute', 'wind', 'kill', 'vlength', 'sort', 'mixgathers', 'split', 'cleave', 'putgthr', 'getgthr', 'sorty', 'mutecsv', 'braid', 'windpoly',
-           'padmissing', 'gprfb']
+           'padmissing', 'gprfb', 'pad', 'matrix']
 
 from ._splitting import split, cleave, putgthr, getgthr, sorty  # noqa: E402
-from ._extra import mutecsv, braid, windpoly, padmissing, gprfb  # noqa: E402 (see _extra.py)
+from ._extra import mutecsv, braid, windpoly, padmissing, gprfb, pad, matrix  # noqa: E402 (see _extra.py)
 
 _abs, _min, _max = abs, min, max
 

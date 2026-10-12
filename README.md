@@ -335,13 +335,16 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.amplitudes.zero`, `nan`, `normalize` | `suzero`, `sunan`, `sunormalize` | zero a time window, replace NaNs and Infs, normalize by rms/max/median |
 | `seispy.amplitudes.weight`, `ai2r`, `r2ai` | `suweight`, `suai2r`, `sur2ai` | weight traces by a header value, impedance to reflectivity and back |
 | `seispy.tapering.taper`, `ramp` | `sutaper`, `suramp` | taper the start and end of traces, and/or the edge traces of a panel |
+| `seispy.tapering.txtaper` | `sutxtaper` | taper in x and t: by the position of the traces in the panel or by a header value, and the ends of the traces |
 | `seispy.windowing.mute`, `wind`, `kill` | `sumute`, `suwind`, `sukill` | mute above/below a curve (modes 0-4), window by header value and in time, zero traces |
 | `seispy.stretching.shift`, `resamp`, `reduce`, `nmo` | `sushift`, `suresamp`, `sureduce`, `sunmo` | shift/window in time, sinc resampling, reduced time, NMO with velocity functions of time and CDP |
+| `seispy.stretching.nmo_a`, `dlmo` | `sunmo_a`, `sudlmo` | NMO with a quartic (anisotropy) term in the traveltime, dynamic linear moveout of surface waves (the velocity is a function of frequency) |
 | `seispy.transforms.hilb`, `zerophase` | `suhilb`, `suzerophase` | Hilbert transform (SU's own FIR, whose sign is the opposite of the usual one), zero-phase equivalent |
 | `seispy.transforms.analytic`, `fft`, `ifft`, `real`, `imag`, `amp`, `logamp`, `phase` | `suanalytic`, `sufft`, `suifft`, `suamp` | complex traces: make them, and take them apart |
 | `seispy.filters.frac`, `phase` | `sufrac`, `suphase` | fractional derivative/integral plus a phase shift, linear phase manipulation (SU's FFT) |
 | `seispy.filters.minphase`, `tvband` | `suminphase`, `sutvband` | minimum phase equivalent (Kolmogoroff), time-variant bandpass (SU's FFT) |
 | `seispy.decon.pef`, `shape` | `supef`, `sushape` | Wiener predictive/spiking deconvolution, Wiener shaping filter (SU's Toeplitz solver) |
+| `seispy.decon.cddecon`, `phidecon`, `fxdecon` | `sucddecon`, `suphidecon`, `sufxdecon` | deconvolution by complex division with a given filter, phase inversion deconvolution (Lichman and Northwood), f-x prediction filtering for random noise (the SU library function, on a panel in memory) |
 | `seispy.stretching.log`, `ilog`, `tsq`, `ttoz`, `ztot` | `sulog`, `suilog`, `sutsq`, `suttoz`, `suztot` | log and time-squared stretch, time-to-depth and depth-to-time resampling |
 | `seispy.convolution.acor`, `conv`, `xcor` | `suacor`, `suconv`, `suxcor` | auto-correlation, convolution and cross-correlation with a filter |
 | `seispy.attributes.amp`, `phase`, `freq`, `q`, ... | `suattributes` | instantaneous attributes, one stage per mode |
@@ -385,6 +388,10 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.filters.fwmix`, `groll` | `sufwmix`, `sugroll` | the weighted mix of a gather in the frequency domain (one trace per gather), and ground roll suppression by the Karhunen-Loeve transform (the singular vectors of the panel) |
 | `seispy.operations.permute`, `recmo`, `simmat` | `supermute`, `surecmo`, `susimmat` | transpose a 3D cube of traces, compensate a moving streamer by mixing with the traces before, and the similarity matrix of two traces (cross-correlation, normalized, regression coefficient or angle) |
 | `seispy.stacking.recip`, `cvs4fowler` | `surecip`, `sucvs4fowler` | sum the traces of the same absolute offset, and constant velocity stacks of CDP gathers for the Fowler codes |
+| `seispy.windowing.pad`, `matrix` | `supad`, `sumatrix` | zero traces for the missing values of a key in each panel, a matrix of trace zones by source and receiver |
+| `seispy.transforms.slowft`, `slowift` | `suslowft`, `suslowift` | Fourier transforms by the discrete sum, with no padding |
+| `seispy.transforms.phasevel`, `ccwt` | `suphasevel`, `succwt` | phase velocity dispersion image of a shot record, complex continuous wavelet transform (Morlet or Fourier kernel) |
+| `seispy.transforms.radon` | `suradon` | the generalized (parabolic, pseudo hyperbolic, linear) Radon transform of a gather: tau-p transform and its inverse, and removal of multiples (the SU library functions, on gathers in memory) |
 | `seispy.windowing.mutecsv`, `windpoly`, `padmissing`, `braid`, `gprfb` | `sumutecsv`, `suwindpoly`, `supadmissing`, `subraid`, `sugprfb` | mutes that interpolate between CDPs, windows by a polygon or polyline, dead traces for missing key values, merging of ordered streams, and removal of the first break of GPR data |
 | `seispy.picking.fbpickw`, `fnzero`, `pickamp` | `sufbpickw`, `sufnzero`, `supickamp` | first break picks, the time of the first and last non-zero sample, and amplitudes picked in a window (functions that return their results) |
 | `seispy.velocity.intvel`, `stkvel` | `suintvel`, `sustkvel` | interval velocities from stacking velocities and the stacking velocities of a dipping layer model (Schneider's formulas) |
@@ -412,6 +419,10 @@ from seispy import operations as op
 traces = synlv() | gain(tpow=2.0) | filter(f=[10, 20, 60, 80]) | gain(agc=True, wagc=0.2) | op.sgn()
 ```
 
+Programs that are left out on purpose: `succepstrum`, whose code transforms the one-sided spectrum with a complex FFT of
+a length that is not valid for it and does not set the length of the trace, so that it does not make the complex cepstrum
+that its documentation describes (`cepstrum` and `clogfft` do).
+
 ### What runs the SU C code
 The work of each SU program is a library function in the SU sources (`su_gain`, `su_nmo`, `su_mute_above`, ...), with the
 program's `main` left out of the build: the stages call those through Cython, without the GIL. The lookup tables and scratch
@@ -424,7 +435,7 @@ differ from the programs, because the program is plainly wrong, are listed at th
   (`seispy.attributes`), `conv`, `acor`, `xcor` and `refcon` (the SU convolution and correlation), `pgc`, the stacks
   (`stack`, `divstack`, `pws`, `stackup`), and `median` and `medmix`. The random numbers of `addnoise`, `addflatnoise`, `jitter`
   and `randspike` are those of SU's generators, so for the same `seed` they make the numbers that the programs make.
-* **SU's FFT, with the SU code between the transforms:** `dipdivcor` (the transform in x), `specfx`, `specfk`, `speck1k2`, `dipfilt`, `frac`, `phase`, `minphase`, `tvband`, `wfft`, `acorfrac`,
+* **SU's FFT, with the SU code between the transforms:** `dipdivcor` (the transform in x), `specfx`, `specfk`, `speck1k2`, `dipfilt`, `frac`, `phase`, `minphase`, `tvband`, `wfft`, `acorfrac`, `cddecon`, `phidecon`, `phasevel`, `ccwt`, `dlmo`,
   `clogfft`, `iclogfft`, `cepstrum`, `icepstrum` (phase unwrapping is SU's too), `st`, `gabor`, `cwt`, `fft`, `ifft`, `zerophase`
   and the 2-D filters. Every frequency domain operation, in Python and in the C++, goes through one FFT, `seispy._fft`:
   SU's prime-factor FFT (`cwp/lib/pfafft`) in single precision, with its sign convention (`exp(+i w t)` to frequency), no normalization

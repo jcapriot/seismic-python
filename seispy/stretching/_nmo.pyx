@@ -20,7 +20,7 @@ cdef class NMOTables:
         float[::1] ttn, atn, tnt, at, q
 
     def __init__(self, int nt, float dt, float ft, float offset, float[::1] ovvt, float smute, bint upward,
-                 bint invert, bint sscale):
+                 bint invert, bint sscale, float[::1] oa1t=None, float[::1] oa2t=None):
         if nt < 2:
             raise ValueError("NMO needs traces with at least 2 samples.")
         if invert and nt < 4:
@@ -38,11 +38,26 @@ cdef class NMOTables:
         self.at = np.zeros(nt, dtype=np.float32)
         self.q = np.zeros(nt, dtype=np.float32)
         cdef int itmute = 0
-        with nogil:
-            su.su_nmo_tables(
-                nt, dt, ft, offset, &ovvt[0], smute, upward, invert, sscale,
-                &self.ttn[0], &self.atn[0], &self.tnt[0], &self.at[0], &itmute,
-            )
+        cdef int status = 0
+        if oa1t is None and oa2t is None:
+            with nogil:
+                su.su_nmo_tables(
+                    nt, dt, ft, offset, &ovvt[0], smute, upward, invert, sscale,
+                    &self.ttn[0], &self.atn[0], &self.tnt[0], &self.at[0], &itmute,
+                )
+        else:
+            # (the program of the anisotropy coefficients: the quartic term of the traveltime)
+            if oa1t is None or oa2t is None or oa1t.shape[0] != nt or oa2t.shape[0] != nt:
+                raise ValueError("anis1 and anis2 must have a value for every sample.")
+            with nogil:
+                status = su.su_nmo_a_tables(
+                    nt, dt, ft, offset, &ovvt[0], &oa1t[0], &oa2t[0], smute, upward, invert, sscale,
+                    &self.ttn[0], &self.atn[0], &self.tnt[0], &self.at[0], &itmute,
+                )
+            if status == 1:
+                raise ValueError("negative moveout; check anis1, anis2, or remove the far-offset traces")
+            if status == 2:
+                raise ValueError("anis2 negative and too small; check anis2, or remove the far-offset traces")
         self.itmute = itmute
 
     @property

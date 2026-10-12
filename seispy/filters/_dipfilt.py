@@ -1,9 +1,9 @@
 """
 SUDIPFILT: dip (slope) filter in the f-k domain (``su/main/filters``).
 
-The traces of the stream are one panel (held in memory). They are Fourier transformed in time and across the traces (numpy's
-FFT, of the traces as they are: see the notes in ``seispy.transforms``), multiplied by an amplitude that is a function of the
-slope ``k / w``, and transformed back.
+The traces of the stream are one panel (held in memory). They are Fourier transformed in time and across the traces (SU's
+FFT, ``seispy._fft``, padded to the lengths that the program uses: ``npfar`` of the number of samples, and ``npfa`` of the
+number of traces), multiplied by an amplitude that is a function of the slope ``k / w``, and transformed back.
 """
 import numpy
 

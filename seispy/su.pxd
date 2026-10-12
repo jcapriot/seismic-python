@@ -826,6 +826,16 @@ cdef extern from "su.h" nogil:
         float *divcor, int trans, int norm)
     void su_dipdivcor_filter(float k, float dpx, float dt, int np, int nw, int nt, const float *div,
         const complex *p, complex *q, complex *kq, complex *qq)
+    float su_radon_gofx(int igopt, float offset, float intercept_off, float refdepth)
+    void su_radon_taupmute(int ip, int ipa, int ipb, int nt, int ltap, float *rt)
+    int su_radon_forward(int nx, int nt, const float *data, const float *g, float dt, int ntfft, int np, float pmin,
+        float dp, const float *mutetime, int nk, float f1, float f2, float prewhite, float *ptau)
+    void su_radon_inverse(int np, int ntfft, int nx, const float *ptau, const float *g, float dt, float pmin, float dp,
+        int ip1, float f1, float f2, float *out)
+    void su_radon_xinterp(int nt, int nx, int ninterp, const float *data, float freq1, float freq2, int lagc,
+        int lent, int lenx, int xopt, float dt, float *out)
+    int su_fxdecon(int nsp, int ntrc, const float *tdatain, float *tdataout, float dt, float taper, float fmin,
+        float fmax, float twlen, int ntrw, int ntrf)
     void su_gain_tpow_table(float *tpowfac, int nt, float tmin, float dt, float tpow, float tred)
     void su_gain_epow_table(float *epowfac, int nt, float tmin, float dt, float epow, float etpow)
     void su_gain(float *data, float tpow, float epow, float gpow,
@@ -841,6 +851,8 @@ cdef extern from "su.h" nogil:
     # stretching_moveout_resamp
     void su_nmo_tables(int nt, float dt, float ft, float offset, const float *ovvt, float smute, int upward,
         int invert, int sscale, float *ttn, float *atn, float *tnt, float *at, int *itmute_out)
+    int su_nmo_a_tables(int nt, float dt, float ft, float offset, const float *ovvt, const float *oa1t, const float *oa2t,
+        float smute, int upward, int invert, int sscale, float *ttn, float *atn, float *tnt, float *at, int *itmute_out)
     void su_nmo(float *data, int nt, float dt, float ft, int itmute, int lmute, int sscale, int invert,
         const float *ttn, const float *atn, const float *tnt, const float *at, float *q)
     void su_taupnmo_tables(int nt, float dt, float ft, float p, const float *vvt, float smute, float *ttn, float *atn,
