@@ -1,16 +1,17 @@
 """
 Transforms: SUHILB, SUZEROPHASE, SUANALYTIC, SUFFT, SUIFFT and SUAMP (``su/main/transforms``), and (in
-``_cepstral.py``) SUCLOGFFT, SUICLOGFFT, SUCEPSTRUM, SUICEPSTRUM and SUWFFT, and the time-frequency panels (in
-``_timefreq.py``) SUST, SUGABOR and SUCWT.
+``_cepstral.py``) SUCLOGFFT, SUICLOGFFT, SUCEPSTRUM, SUICEPSTRUM and SUWFFT, the time-frequency panels (in
+``_timefreq.py``) SUST, SUGABOR and SUCWT, and (in ``_extra.py``) SUSLOWFT, SUSLOWIFT, SUPHASEVEL, SUCCWT and SURADON.
 
 The stages that make complex traces (``analytic``, ``fft``), or take them apart (``ifft``, ``real``, ``imag``, ``amp``,
 ``logamp``, ``phase``), use traces with complex samples (see ``Trace.dtype``), where the SU programs have traces of
 pairs of floats and a trace id that says that they are complex.
 
 Where a program plainly does not do what its documentation says this does what the documentation says. Frequency
-domain operations use numpy's Fourier transforms of the trace as it is: the SU programs zero-pad every trace to a
-length that their prime-factor FFT is fast for. Note that the SU transforms have ``exp(+i w t)`` as their forward
-kernel, which is the conjugate of numpy's, so what SU multiplies a spectrum by is conjugated here.
+domain operations use ``seispy._fft``, SU's prime-factor FFT in single precision, on the traces padded with zeros as
+the programs pad them (to a length that the FFT is fast for), so that the outputs have the lengths and the frequency
+sampling of the programs. Note that the SU transforms have ``exp(+i w t)`` as their forward kernel, which is the
+conjugate of numpy's, and that is the default of ``seispy._fft``.
 """
 import numpy as np
 
@@ -210,3 +211,4 @@ from ._cepstral import clogfft, iclogfft, cepstrum, icepstrum, wfft  # noqa: E40
 from ._timefreq import st, gabor, cwt  # noqa: E402
 from ._spectra import specfx, specfk, speck1k2  # noqa: E402
 from ._slant import taup  # noqa: E402
+from ._extra import slowft, slowift, phasevel, ccwt, radon  # noqa: E402

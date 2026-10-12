@@ -7,12 +7,13 @@ from seispy import attributes
 from seispy.amplitudes import centsamp, dipdivcor
 from seispy.container import from_iterable
 from seispy.convolution import acorfrac, conv
+from seispy.decon import cddecon, fxdecon, phidecon
 from seispy.filters import frac, minphase, phase, tvband
 from seispy.parallel import pmap
-from seispy.stretching import ilog, log, reduce, taupnmo, ttoz
+from seispy.stretching import dlmo, ilog, log, nmo_a, reduce, taupnmo, ttoz
 from seispy.synthetics import synlv
-from seispy.tapering import ramp, taper
-from seispy.transforms import cepstrum, clogfft, iclogfft, taup, wfft
+from seispy.tapering import ramp, taper, txtaper
+from seispy.transforms import ccwt, cepstrum, clogfft, iclogfft, radon, taup, wfft
 from seispy.windowing import mute
 
 FILTER = [0.0, 0.4, 0.2, 0.5, 0.5]
@@ -41,6 +42,12 @@ STAGES = {
     'log': lambda: log(ntmin=5),
     'taupnmo': lambda: taupnmo(vnmo=2000.0, p=lambda trace: 0.1 / 2000.0),
     'clogfft': lambda: clogfft(unwrap=0) | iclogfft(),
+    'nmo_a': lambda: nmo_a(vnmo=2000.0, anis1=1e-18, anis2=0.0),
+    'dlmo': lambda: dlmo(vnmo=[400.0, 800.0], fnmo=[0.0, 40.0]),
+    'cddecon': lambda: cddecon(np.array(FILTER, dtype=np.float32), pnoise=0.01),
+    'phidecon': lambda: phidecon(),
+    'ccwt': lambda: ccwt(noct=2, nv=3),
+    'txtaper': lambda: txtaper(tbeg=20.0, tend=20.0, key='offset', min=100.0, max=800.0, dx=100.0),
 }
 
 
@@ -57,6 +64,8 @@ PANEL_STAGES = {
     'taup_fk': lambda: taup(1, dx=10.0, pmin=0.0, pmax=0.004, np=11),
     'taup_tx': lambda: taup(2, dx=10.0, pmin=0.0, pmax=0.004, np=11),
     'dipdivcor': lambda: dipdivcor(25.0, np=10, vmig=2000.0),
+    'fxdecon': lambda: fxdecon(ntrw=6, ntrf=2),
+    'radon': lambda: radon(choose=3, nwin=2, muts=lambda trace: 200.0),
 }
 
 
@@ -71,3 +80,18 @@ def test_threads_can_each_transform_a_panel(name):
         results = list(pool.map(lambda _: samples(from_iterable(panel) | stage), range(16)))
     for got in results:
         npt.assert_array_equal(got, expected)
+
+
+def test_threads_can_each_estimate_residual_statics():
+    import concurrent.futures
+
+    from seispy.statics import resstat
+
+    panel = list(synlv(nt=101, nxm=12))
+    keyed = [t.replace(ensemble_number=i % 3 + 1, ensemble_trace_number=i // 3 + 1) for i, t in enumerate(panel)]
+    expected = resstat(keyed, ntpick=5, niter=2, cmp=lambda t: t.header['ensemble_trace_number'] % 2)
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        results = list(pool.map(
+            lambda _: resstat(keyed, ntpick=5, niter=2, cmp=lambda t: t.header['ensemble_trace_number'] % 2), range(16)
+        ))
+    assert all(r == expected for r in results)

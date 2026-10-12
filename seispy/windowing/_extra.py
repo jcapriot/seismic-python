@@ -1,6 +1,7 @@
 """
 More programs of ``su/main/windowing_sorting_muting``: SUMUTECSV (mutes that change with the CDP), SUWINDPOLY (windowing
-by a polygon), SUPADMISSING (dead traces for the values of a key that are missing), SUBRAID (merging ordered streams) and
+by a polygon), SUPADMISSING and SUPAD (dead traces for the values of a key that are missing), SUMATRIX (a matrix of zones of
+traces by source and receiver), SUBRAID (merging ordered streams) and
 SUGPRFB (removing the first break from GPR data).
 
 Where the program plainly does not do what its documentation says this does what the documentation says; the
@@ -16,7 +17,7 @@ from ..container import as_trace_iterator, from_iterable
 from ..parallel import group_by
 from ..stage import Stage, header_value, stage
 
-__all__ = ['mutecsv', '_windpoly', '_padmissing', 'braid', '_gprfb']
+__all__ = ['mutecsv', '_windpoly', '_padmissing', 'braid', '_gprfb', 'pad', 'matrix']
 
 F32 = np.float32
 
@@ -441,3 +442,217 @@ def _gprfb(upstream, *, nx=51, fbt=60, report=None):
 # the header words trwf and grnors). Differences from SU: the pilot is shifted the same way that it was fitted (the program
 # fitted the shifted pilot for a negative shift by reading before its array, and shifted it the other way for the other).
 gprfb = stage(_gprfb, parallelism='serial', name='gprfb', validate=True)
+
+
+# ------------------------------------------------------------------------------------------------------------- pad
+def _key_number(trace, key):
+    value = header_value(trace, key) if callable(key) else trace.header[key]
+    return value
+
+
+def _pad(upstream, *, min, max, key1='ensemble_number', key2='ensemble_trace_number', key3='trace_type', val3=2,
+         d=1.0):
+    if d == 0:
+        raise ValueError("trace spacing d cannot be zero")
+    if max < min:
+        raise ValueError("max needs to be greater than min")
+    sign = -1 if d < 0 else 1
+    # (a descending key starts at max)
+    first, last = (max, min) if d < 0 else (min, max)
+    source = as_trace_iterator(upstream)
+
+    def zero_trace(template, value, as_int):
+        return template.replace(np.zeros(template.n_sample, dtype=F32),
+                                **{key2: int(value) if as_int else value, key3: val3})
+
+    def gen():
+        panel = None
+        started = False
+        template = None
+        number = first - d
+        is_int = True
+        for trace in source:
+            v1, v2 = _key_number(trace, key1), _key_number(trace, key2)
+            is_int = isinstance(v2, (int, np.integer))
+            if not started:
+                panel, number, started = v1, first - d, True
+            in_range = min <= v2 <= max
+            if panel != v1 and template is not None:
+                # a new panel: finish the one before
+                c = number + d
+                while sign * c <= sign * last:
+                    yield zero_trace(template, c, is_int)
+                    c += d
+            if panel != v1:
+                number, panel = first - d, v1
+            if in_range:
+                template = trace
+                # the traces that are missing before this one
+                c = number + d
+                while sign * c < sign * v2:
+                    yield zero_trace(trace, c, is_int)
+                    c += d
+                yield trace
+                panel, number = v1, v2
+        if template is not None:
+            c = number + d
+            while sign * c <= sign * last:
+                yield zero_trace(template, c, is_int)
+                c += d
+
+    return from_iterable(gen())
+
+
+# SUPAD: pad zero traces, so that every panel (the traces that have the same value of key1) has a trace for each value of
+# key2 from min to max, in steps of d
+#
+# min, max : the first and the last value of key2
+# key1 : the value that the traces of a panel share, default 'ensemble_number' (SU's ep)
+# key2 : the value that the traces of a panel are numbered by, default 'ensemble_trace_number' (SU's tracf)
+# key3, val3 : the value that is set on the traces that are made, and what to, default 'trace_type' and 2 (a dead trace)
+# d : the spacing of key2, default 1: negative for a key2 that is descending, with min and max as they are (the series
+#     starts at max)
+#
+# The panels are told by key1 changing. Traces with a key2 outside of min and max are lost. A trace whose key2 is not a
+# multiple of d from the start shifts the series. The traces that are made have the header of the trace after them (of
+# the last trace of the panel for those after it). Where the program does not do what its documentation says: for a
+# negative d it drops every trace (it tests the range with min and max as they are, and starts at min).
+pad = stage(_pad, parallelism='serial', name='pad', validate=True)
+
+
+# ----------------------------------------------------------------------------------------------------------- matrix
+def _location(trace, spec):
+    """The numbers (floats) that a key spec gives for a trace: 'source' or 'receiver' is the x and y of tx_loc or rx_loc,
+    a name is a value of the header, and a function is a function of the trace"""
+    if callable(spec):
+        return [float(spec(trace))]
+    if spec == 'source':
+        loc = trace.header['tx_loc']
+        return [float(loc[0]), float(loc[1])]
+    if spec == 'receiver':
+        loc = trace.header['rx_loc']
+        return [float(loc[0]), float(loc[1])]
+    return [float(trace.header[spec])]
+
+
+def _key_list(spec, dividers, what):
+    specs = list(spec) if isinstance(spec, (list, tuple)) else [spec]
+    # the numbers of each key (a location is two)
+    widths = [2 if s in ('source', 'receiver') else 1 for s in specs]
+    total = sum(widths)
+    if dividers is None:
+        values = [1.0] * total
+    else:
+        values = [float(v) for v in (dividers if isinstance(dividers, (list, tuple, np.ndarray)) else [dividers])]
+        if len(values) == 1 and total > 1:
+            values = values * total
+        if len(values) != total:
+            raise ValueError(f"The {what} dividers need a value for each of the {total} numbers of its keys.")
+    if any(v == 0.0 for v in values):
+        raise ValueError(f"The {what} dividers can not be 0.")
+    return specs, values
+
+
+def _matrix(upstream, *, skeyloc='source', sdivider=None, rkeyloc='receiver', rdivider=None, rfill=1, lenzone=400.0,
+            numzone=20):
+    if rfill not in (0, 1, 2):
+        raise ValueError(f"rfill={rfill} must be 0, 1 or 2")
+    if lenzone < 1.0:
+        raise ValueError("lenzone must be at least 1 ms")
+    if numzone < 1:
+        raise ValueError("numzone must be at least 1")
+    sspecs, sdiv = _key_list(skeyloc, sdivider, 'source')
+    rspecs, rdiv = _key_list(rkeyloc, rdivider, 'receiver')
+    source = as_trace_iterator(upstream)
+
+    def numbers(trace, specs, dividers):
+        raw = [v for spec in specs for v in _location(trace, spec)]
+        return tuple(int(math.floor(v / d)) for v, d in zip(raw, dividers))
+
+    def set_numbers(trace_fields, specs, dividers, values):
+        """Header values to set, for the keys that can be set (the name of a header value, or 'source' or 'receiver')"""
+        i = 0
+        loc_name = {'source': 'tx_loc', 'receiver': 'rx_loc'}
+        for spec in specs:
+            if callable(spec):
+                i += 1
+            elif spec in loc_name:
+                loc = list(trace_fields.get(loc_name[spec]))
+                loc[0], loc[1] = values[i] * dividers[i], values[i + 1] * dividers[i + 1]
+                trace_fields[loc_name[spec]] = loc
+                i += 2
+            else:
+                trace_fields[spec] = values[i] * dividers[i]
+                i += 1
+
+    def gen():
+        traces = list(source)
+        if not traces:
+            return
+        first = traces[0]
+        dt_ms = first.d_sample * 1000.0
+        if not dt_ms:
+            raise ValueError("The trace has no sample interval.")
+        n_zone = _nint(lenzone / dt_ms)
+        n_keep = min(first.n_sample, n_zone)
+        s_keys = [numbers(t, sspecs, sdiv) for t in traces]
+        r_keys = [numbers(t, rspecs, rdiv) for t in traces]
+        sources, receivers = sorted(set(s_keys)), sorted(set(r_keys))
+        s_index = {k: i for i, k in enumerate(sources)}
+        r_index = {k: i for i, k in enumerate(receivers)}
+        place = {}
+        replaced = 0
+        for i, (sk, rk) in enumerate(zip(s_keys, r_keys)):
+            if (s_index[sk], r_index[rk]) in place:
+                replaced += 1
+            place[(s_index[sk], r_index[rk])] = i
+        if replaced:
+            warnings.warn(f"There were {replaced} traces that REPLACED another trace in the SAME matrix location.")
+        n_receivers = len(receivers)
+        n_out = n_zone * numzone
+        for n in range(0, len(sources), numzone):
+            n_end = min(n + numzone, len(sources))
+            if rfill < 2:
+                k_beg = k_end = -1
+                for k in range(n_receivers):
+                    if any((j, k) in place for j in range(n, n_end)):
+                        if k_beg == -1:
+                            k_beg = k
+                        k_end = k + 1
+            else:
+                k_beg, k_end = 0, n_receivers
+            for k in range(k_beg, k_end):
+                row = np.zeros(n_out, dtype=F32)
+                fold = 0
+                for m, j in enumerate(range(n, n_end)):
+                    i = place.get((j, k))
+                    if i is not None:
+                        fold += 1
+                        row[m * n_zone:m * n_zone + n_keep] = np.asarray(traces[i])[:n_keep]
+                if fold > 0 or rfill > 0:
+                    fields = {'tx_loc': first.header['tx_loc'], 'rx_loc': first.header['rx_loc'], 'fold': fold}
+                    set_numbers(fields, sspecs, sdiv, sources[n])
+                    set_numbers(fields, rspecs, rdiv, receivers[k])
+                    yield first.replace(row, **fields)
+
+    return from_iterable(gen())
+
+
+# SUMATRIX: assemble a matrix of trace sample zones, to show surface consistent differences and geometry errors: each
+# output trace has numzone zones of lenzone ms, each from one source (the first lenzone ms of the trace of the source
+# and the receiver of the output trace)
+#
+# skeyloc, rkeyloc : the keys that identify sources and receivers: a header name, a function of a trace, 'source' or
+#                    'receiver' (the x and y of tx_loc or rx_loc, the default), or a list of them
+# sdivider, rdivider : the dividers of the numbers of the keys: the number is floor(value / divider), so that a divider
+#                      scales and rounds; -1 reverses the order of the sources or receivers
+# rfill : 1 (default) zero traces for the receivers that have no input trace in the zones of an output set, but are
+#         between the receivers that do; 0 not; 2 for all of the receivers
+# lenzone : the length of a zone (ms, to the nearest sample), default 400
+# numzone : the number of zones of an output trace, default 20
+#
+# One set of output traces is made for each numzone sources (sorted by their numbers), and a trace for each receiver
+# in it. The headers are those of the first trace, with the keys that can be set (names, 'source' and 'receiver') set
+# to the numbers of the first zone's source and of the receiver, and ``fold`` to the number of zones that were filled
+# (the program's nhs). The traces are in memory (the program's maxsources, maxreceivers and maxtraces are not needed).
+matrix = stage(_matrix, parallelism='serial', name='matrix', validate=True)

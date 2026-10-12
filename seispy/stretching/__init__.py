@@ -1,17 +1,18 @@
 """
-Programs that change the time axis of traces: SUSHIFT, SURESAMP, SUREDUCE, SUNMO, SUTAUPNMO, SULOG, SUILOG, SUTSQ, SUTTOZ and
-SUZTOT (``su/main/stretching_moveout_resamp``).
+Programs that change the time axis of traces: SUSHIFT, SURESAMP, SUREDUCE, SUNMO, SUNMO_A, SUTAUPNMO, SUDLMO, SULOG, SUILOG,
+SUTSQ, SUTTOZ and SUZTOT (``su/main/stretching_moveout_resamp``).
 
 Where a program plainly does not do what its documentation says (see the notes on each) this does what the
 documentation says. Times are in seconds, including the ``dt`` of ``shift`` (which sushift has in microseconds).
 """
 import numpy as np
 
+from .. import _fft
 from ..stage import Stage, header_value, per_trace, stage
 from ..container import as_trace_iterator, from_iterable
 from . import _nmo, _resample, _stretch, _taupnmo
 
-__all__ = ['shift', 'resamp', 'reduce', 'nmo', 'taupnmo', 'log', 'ilog', 'tsq', 'ttoz', 'ztot']
+__all__ = ['shift', 'resamp', 'reduce', 'nmo', 'nmo_a', 'taupnmo', 'dlmo', 'log', 'ilog', 'tsq', 'ttoz', 'ztot']
 
 F32 = np.float32
 
@@ -607,3 +608,161 @@ def _ztot(upstream, *, z=None, v=None, nt=None, dt=None, ft=None):
 #
 # The velocity is piecewise linear in depth, which has to be remembered when using this as the inverse of `ttoz`.
 ztot = stage(_ztot, parallelism='trace', name='ztot', validate=True)
+
+
+# ---------------------------------------------------------------------------------------------------------- nmo_a
+def _anisotropy_functions(tnmo, vnmo, anis1, anis2, cdp):
+    """The velocity functions and anisotropy coefficients for each cdp: (cdps, [(t, v)], [(t, anis1)], [(t, anis2)]),
+    sorted by cdp"""
+    if cdp is None:
+        cdps = [0.0]
+        vs, ts, a1s, a2s = [vnmo], [tnmo], [anis1], [anis2]
+    else:
+        cdps = list(np.atleast_1d(np.asarray(cdp, dtype=np.float64)))
+        vs, ts = vnmo, tnmo
+        if vs is None or ts is None or len(vs) != len(cdps) or len(ts) != len(cdps):
+            raise ValueError("a vnmo array and a tnmo array must be given for each cdp")
+        a1s = [None] * len(cdps) if anis1 is None else anis1
+        a2s = [None] * len(cdps) if anis2 is None else anis2
+        if len(a1s) != len(cdps) or len(a2s) != len(cdps):
+            raise ValueError("an anis1 array and an anis2 array must be given for each cdp, or none")
+    velocity, first, second = [], [], []
+    for v, t, a1, a2 in zip(vs, ts, a1s, a2s):
+        v = np.atleast_1d(np.asarray(1500.0 if v is None else v, dtype=np.float64))
+        t = np.atleast_1d(np.asarray(0.0 if t is None else t, dtype=np.float64))
+        if v.shape[0] != t.shape[0] and not (v.shape[0] == 1 and t.shape[0] == 1):
+            raise ValueError("number of vnmo and tnmo values must be equal")
+        if (np.diff(t) <= 0).any():
+            raise ValueError("tnmo values must increase monotonically")
+        coefficients = []
+        for a in (a1, a2):
+            a = np.zeros(v.shape[0]) if a is None else np.atleast_1d(np.asarray(a, dtype=np.float64))
+            if a.shape[0] != v.shape[0]:
+                raise ValueError("number of vnmo and anis1 (anis2) values must be equal")
+            coefficients.append(a)
+        velocity.append((t, v))
+        first.append((t, coefficients[0]))
+        second.append((t, coefficients[1]))
+    order = np.argsort(cdps, kind='stable')
+    return (np.asarray(cdps)[order], [velocity[i] for i in order], [first[i] for i in order],
+            [second[i] for i in order])
+
+
+def _nmo_a_stage(upstream, *, tnmo=None, vnmo=1500.0, anis1=None, anis2=None, cdp=None, smute=1.5, lmute=25,
+                 sscale=True, invert=False, upward=False):
+    if smute <= 0.0:
+        raise ValueError("smute must be greater than 0.0")
+    if lmute < 0:
+        raise ValueError("lmute must not be negative")
+    cdps, velocity, first, second = _anisotropy_functions(tnmo, vnmo, anis1, anis2, cdp)
+    sloths = _CdpVelocities(cdps, velocity, lambda v: 1.0 / (v * v))
+    quartic = _CdpVelocities(cdps, first, lambda a: a)
+    denominator = _CdpVelocities(cdps, second, lambda a: a)
+    last = [None, None]
+
+    def nmo_a_trace(trace):
+        header = trace.header
+        nt = trace.n_sample
+        dt = header['d_sample']
+        if not dt:
+            raise ValueError("The trace has no sample interval.")
+        ft = header['sample_start']
+        offset = header['offset']
+        cdp_of_trace = header['ensemble_number'] if len(cdps) > 1 else 0
+        key = (nt, dt, ft, offset, cdp_of_trace)
+        if last[0] != key:
+            ovvt, oa1t, oa2t = (np.ascontiguousarray(f.at(nt, dt, ft, cdp_of_trace), dtype=np.float32)
+                                for f in (sloths, quartic, denominator))
+            last[:] = [key, _nmo.NMOTables(nt, dt, ft, offset, ovvt, smute, upward, invert, sscale, oa1t, oa2t)]
+        x = np.array(trace)
+        last[1].apply(x, lmute)
+        return trace.replace(x)
+
+    return per_trace(upstream, nmo_a_trace, on_complex='linear')
+
+
+def nmo_a(tnmo=None, vnmo=1500.0, *, anis1=None, anis2=None, cdp=None, smute=1.5, lmute=25, sscale=True, invert=False,
+          upward=False):
+    """NMO with an anisotropy option: a quartic term in the traveltime (SUNMO_A).
+
+    As ``nmo``, with the moveout ``t^2 = t0^2 + x^2 / v^2 + anis1 x^4 / (1 + anis2 x^2)`` (an experimental option, for
+    non-hyperbolic moveout from layering, mode conversion or anisotropy).
+
+    Parameters
+    ----------
+    tnmo, vnmo, cdp, smute, lmute, sscale, invert, upward :
+        As for ``nmo``.
+    anis1, anis2 : arrays, optional
+        The coefficients of the quartic term, for the times ``tnmo`` (linearly interpolated, constant outside; default 0),
+        and for each cdp when ``cdp`` is given (a list of arrays, or none). As in the program the offset in them is in
+        units of ``dt`` (the traveltime is worked out in samples): for the formula above with the offset in meters and
+        the time in seconds they are ``anis1 dt^2`` and ``anis2 dt^2``.
+
+    Negative moveout (``anis1`` too negative for the offset), or ``1 + anis2 x^2`` that is not positive, is a ValueError,
+    for any trace, whether or not it would survive the stretch mute (as in the program).
+    """
+    kwargs = dict(anis1=anis1, anis2=anis2, cdp=cdp, smute=smute, lmute=lmute, sscale=sscale, invert=invert,
+                  upward=upward)
+    _nmo_a_stage((), tnmo=tnmo, vnmo=vnmo, **kwargs)  # check the parameters now
+    return Stage(_nmo_a_stage, tnmo=tnmo, vnmo=vnmo, parallelism='trace', name='nmo_a', **kwargs)
+
+
+# ------------------------------------------------------------------------------------------------------------ dlmo
+def _dlmo_stage(upstream, *, vnmo=400.0, fnmo=0.0, cdp=None, cm=False, invert=False, dt=None):
+    cdps, functions = _velocity_functions(fnmo, vnmo, cdp)
+    # the slowness (1 / v) as a function of frequency, linearly interpolated (and constant outside of the frequencies)
+    slownesses = _CdpVelocities(cdps, functions, lambda v: 1.0 / v)
+    sign = 1.0 if invert else -1.0
+
+    def dlmo_trace(trace):
+        header = trace.header
+        nt = trace.n_sample
+        if nt == 0:
+            return trace
+        sample_dt = dt or header['d_sample']
+        if not sample_dt:
+            raise ValueError("The trace has no sample interval, and no `dt` was given.")
+        nfft = _fft.good_length_within(nt, 2 * nt)
+        n_freq = nfft // 2 + 1
+        d_freq = 1.0 / (nfft * sample_dt)
+        cdp_of_trace = header['ensemble_number'] if len(cdps) > 1 else 0
+        slowness = slownesses.at(n_freq, d_freq, 0.0, cdp_of_trace).astype(np.float64)
+        offset = abs(float(header['offset']))
+        if cm:
+            offset /= 100.0
+        omega = 2.0 * np.pi * d_freq * np.arange(n_freq)
+        # the phase shift of each frequency: a linear moveout of the velocity of its frequency
+        shift = np.exp(1j * (sign * omega * slowness * offset)).astype(np.complex64)
+        spectrum = _fft.rfft(np.asarray(trace), nfft)
+        return trace.replace(_fft.irfft(spectrum * shift, nfft)[:nt])
+
+    return per_trace(upstream, dlmo_trace, on_complex='linear')
+
+
+def dlmo(vnmo=400.0, fnmo=0.0, *, cdp=None, cm=False, invert=False, dt=None):
+    """Dynamic linear moveout correction for surface waves (SUDLMO): a linear moveout whose velocity is a function of
+    frequency, applied in the frequency domain (a phase shift of ``|offset| w / v(f)``).
+
+    Parameters
+    ----------
+    vnmo, fnmo : arrays
+        The velocities (m/s) and the frequencies (Hz) that they are for (monotonically increasing), default 400 m/s at
+        0 Hz. Linearly interpolated, constant outside. Lists of arrays with ``cdp``.
+    cdp : array, optional
+        The CDPs that the velocity functions are for (the CDP of a trace is its ``ensemble_number``). Between them the
+        slowness is interpolated linearly, and outside of them the first and last functions are used.
+    cm : bool
+        The offsets are in centimeters.
+    invert : bool
+        The inverse correction (the opposite phase).
+    dt : float
+        The sample interval (s), if it is not that of the traces (the program has this override the header).
+
+    The program does not apply the correction to a trace that has the offset of the one before it minus one (which is
+    only the second trace of a gather where that is the case, and which then comes out as a stale spectrum of the
+    last one); every trace is corrected here. The interpolation of the velocity between CDPs is also of the
+    first ``nt`` frequencies in the program, where it is all of them here.
+    """
+    kwargs = dict(cdp=cdp, cm=cm, invert=invert, dt=dt)
+    _dlmo_stage((), vnmo=vnmo, fnmo=fnmo, **kwargs)  # check the parameters now
+    return Stage(_dlmo_stage, vnmo=vnmo, fnmo=fnmo, parallelism='trace', name='dlmo', **kwargs)

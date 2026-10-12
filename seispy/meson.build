@@ -19,6 +19,7 @@ subdir('synthetics')
 subdir('welllogs')
 subdir('dmo')
 subdir('picking')
+subdir('statics')
 
 python_sources = [
     '__init__.py',

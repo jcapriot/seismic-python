@@ -1,5 +1,5 @@
 """
-Tapering programs: SUTAPER, SURAMP and SUGAUSSTAPER (``su/main/tapering``), with the taper functions of the SU library (``_taper.pyx``).
+Tapering programs: SUTAPER, SUTXTAPER, SURAMP and SUGAUSSTAPER (``su/main/tapering``), with the taper functions of the SU library (``_taper.pyx``).
 
 Where a program plainly does not do what its documentation says (see the notes on each) this does what the
 documentation says.
@@ -10,7 +10,7 @@ from ..container import as_trace_iterator, from_iterable
 from ..stage import Stage, header_value, per_trace, stage
 from . import _taperc as _c
 
-__all__ = ['taper', 'ramp', 'gausstaper']
+__all__ = ['taper', 'txtaper', 'ramp', 'gausstaper']
 
 F32 = np.float32
 _TAPER_TYPES = (1, 2, 3, 4, 5)
@@ -153,3 +153,108 @@ def _gausstaper(upstream, *, key='offset', x0=300.0, xw=50.0):
 #
 # Unlike taper, x0 is the center of the taper rather than the edges of the data.
 gausstaper = stage(_gausstaper, parallelism='trace', name='gausstaper', validate=True)
+
+
+# -------------------------------------------------------------------------------------------------------- txtaper
+def _txtaper(upstream, *, low=0.0, tbeg=0.0, tend=0.0, type=1, key=None, tr1=0, tr2=None, min=0.0, max=0.0, dx=1.0,
+             ntr=None):
+    if low > 1.0:
+        raise ValueError("low must be less than 1")
+    if type not in _TAPER_TYPES:
+        raise ValueError(f"taper type {type!r} must be one of {list(_TAPER_TYPES)}")
+    if key is None:
+        if tr2 is None:
+            tr2 = tr1
+        if tr1 < 0 or tr2 < 0:
+            raise ValueError("tr1 and tr2 must not be negative")
+    elif dx <= 0.0:
+        raise ValueError("dx must be positive")
+    source = as_trace_iterator(upstream)
+    low = F32(low)
+
+    def weight(f):
+        # (the minimum amplitude is that of every taper: the program only has it in the linear one)
+        return float(low + (1.0 - low) * _c.envelope(type, f, 0.0, 1.0))
+
+    def key_weight(y):
+        """The weight of the x taper of the values of a key: 1 from min to max, down to 0 at dx beyond them"""
+        if y < min:
+            f = 1.0 - (min - y) / dx if y > min - dx else 0.0
+        elif y > max:
+            f = (max + dx - y) / dx if y < max + dx else 0.0
+        else:
+            f = 1.0
+        return weight(f)
+
+    def gen():
+        total = None
+        if key is None and (tr1 or tr2):
+            total = ntr if ntr is not None else source.n_traces
+            if not total:
+                raise ValueError("ntr is neither known from the traces nor given.")
+        for k, trace in enumerate(source):
+            x = np.array(trace)
+            fac = 1.0
+            if key is not None:
+                fac = key_weight(header_value(trace, key))
+            elif total is not None:
+                # the first tr1 traces ramp up to (but not including) the full amplitude, and the last tr2 down to the
+                # minimum on the very last trace
+                if k < tr1:
+                    fac *= weight(k / tr1)
+                if tr2 and k >= total - tr2:
+                    fac *= weight((total - 1 - k) / tr2)
+            if fac != 1.0:
+                x *= F32(fac)
+            if tbeg != 0.0 or tend != 0.0:
+                dt_ms = trace.d_sample * 1000.0
+                if not dt_ms:
+                    raise ValueError("The trace has no sample interval.")
+                n = x.shape[0]
+                tlen = (n - 1) * dt_ms
+                if tbeg + tend > tlen:
+                    raise ValueError(f"sum of tapers tbeg={tbeg}, tend={tend} exceeds trace length ({tlen} ms)")
+                # the weights of the time taper (the SU library function) on ones, with the minimum amplitude
+                ones = np.ones(n, dtype=np.float32)
+                _c.time_taper(ones, tbeg, tend, type, dt_ms)
+                w = (low + (1.0 - low) * ones).astype(np.float32)
+                x = _on_parts(x, lambda a: np.multiply(a, w, out=a))
+            yield trace.replace(x)
+
+    return from_iterable(gen(), n_traces=source.n_traces)
+
+
+def txtaper(*, low=0.0, tbeg=0.0, tend=0.0, type=1, key=None, tr1=0, tr2=None, min=0.0, max=0.0, dx=1.0, ntr=None):
+    """Taper the edges of a data panel in x and in t (SUTXTAPER).
+
+    The traces get weights from their position in the panel (the first ``tr1`` and the last ``tr2``) or from the value
+    of a header key (1 from ``min`` to ``max``, and falling to 0 over ``dx`` outside of them), and the samples at the
+    start and the end of each trace are tapered.
+
+    Parameters
+    ----------
+    low : float
+        The minimum amplitude factor of the tapers, default 0.
+    tbeg, tend : float
+        Length (ms) of the taper at the start and at the end of each trace.
+    type : {1, 2, 3, 4, 5}
+        1 linear, 2 sine, 3 cosine, 4 gaussian (+/-3.8), 5 gaussian (+/-2.0).
+    key : header name or function, optional
+        The value that sets the weights of the traces, with ``min``, ``max`` and ``dx`` (this takes precedence over
+        ``tr1`` and ``tr2``). By default the position in the panel is used.
+    tr1, tr2 : int
+        The number of traces to taper at the start and at the end (``tr2`` is ``tr1`` by default). This needs to know
+        the position of each trace, so such a stage can not be split across workers.
+    min, max, dx : float
+        The range of ``key`` that is not tapered, and the length of the taper (in the units of the key).
+    ntr : int, optional
+        The number of traces, if the upstream does not know it.
+
+    Where the program does not do what its documentation says this does that: the minimum amplitude ``low`` is for
+    every taper type (the program only has it in the linear one), and the end of a time taper starts on the last
+    sample (the program starts it one sample after it, which also writes past the trace).
+    """
+    kwargs = dict(low=low, tbeg=tbeg, tend=tend, type=type, key=key, tr1=tr1, tr2=tr2, min=min, max=max, dx=dx, ntr=ntr)
+    _txtaper((), **kwargs)  # check the parameters now
+    serial = key is None and bool(tr1 or (tr2 if tr2 is not None else tr1))
+    return Stage(_txtaper, parallelism='serial' if serial else 'trace', name='txtaper', **kwargs)
