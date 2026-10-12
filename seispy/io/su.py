@@ -8,8 +8,9 @@ An SU header has about 90 words and a seispy ``Trace`` has about 20 header value
 
 * **mapped** words are converted to and from the header values of the trace (units, scalars and all) and are
   authoritative: a stage that changes ``d_sample`` changes ``dt`` in what is written. They are
-  ``ns``, ``dt``, ``delrt``, ``trid``, ``cdp``, ``cdpt``, ``sx``, ``sy``, ``gx``, ``gy``, ``selev``, ``gelev``,
-  ``offset``, ``nhs`` (the fold), ``sstat``, ``gstat``, ``tstat``, ``counit``, ``scalco`` and ``scalel``.
+  ``ns``, ``dt``, ``delrt``, ``trid``, ``tracl`` (the ``trace_id``, which stages use as SU programs use ``tracl``),
+  ``cdp``, ``cdpt``, ``sx``, ``sy``, ``gx``, ``gy``, ``selev``, ``gelev``, ``offset``, ``nhs`` (the fold), ``sstat``,
+  ``gstat``, ``tstat``, ``counit``, ``scalco`` and ``scalel``.
 * every other non zero word is kept in ``trace.extra`` by its SU name, and written back as it was. Stages do not
   update these words (for example ``tracl``, ``fldr``, ``muts`` or ``d1``).
 * words that SU has no place for (``iline``, ``xline``) and complex traces are not written.
@@ -20,9 +21,12 @@ Two things differ from what SU programs see in the headers, both on purpose:
   has an ``offset`` but zero coordinates; those get ``rx_loc = (offset, 0, 0)`` when read and are written back with
   zero coordinates again (until a stage gives the trace coordinates).
 * when the ``offset`` of a trace disagrees with its coordinates, that value is kept (in ``extra``) and written.
+* the ``offset`` word is an integer and is not scaled by ``scalco``: an offset of 0.1 (coordinates in km) is
+  written as 0, with a warning. SU data is in meters (or feet).
 """
 import os
 import sys
+import warnings
 from contextlib import contextmanager
 
 import numpy as np
@@ -58,7 +62,7 @@ def _byte_order(endian):
 
 # words that are turned into header values (all other non zero words go to trace.extra)
 _MAPPED = frozenset(
-    "ns dt delrt trid cdp cdpt sx sy gx gy selev gelev offset nhs sstat gstat tstat counit".split()
+    "ns dt delrt trid tracl cdp cdpt sx sy gx gy selev gelev offset nhs sstat gstat tstat counit".split()
 )
 _COORD_WORDS = ("sx", "sy", "gx", "gy")
 _I16 = (-(2**15), 2**15 - 1)
@@ -161,6 +165,7 @@ def su_header_to_trace(row, data):
         trace_type=w["trid"],
     )
     return tr.replace(
+        trace_id=w["tracl"],
         ensemble_number=max(w["cdp"], 0),
         ensemble_trace_number=max(w["cdpt"], 0),
         fold=w["nhs"],
@@ -214,6 +219,7 @@ def trace_to_su_header(trace, dtype=None):
         row["delrt"] = delrt
 
     put("trid", hdr["trace_type"])
+    put("tracl", hdr["trace_id"], _I32)
     put("cdp", hdr["ensemble_number"] or extra.get("cdp", 0), _I32)
     put("cdpt", hdr["ensemble_trace_number"] or extra.get("cdpt", 0), _I32)
     put("nhs", hdr["fold"])
@@ -248,6 +254,13 @@ def trace_to_su_header(trace, dtype=None):
         row["selev"] = round(elev[0] / scale)
         row["gelev"] = round(elev[1] / scale)
         offset = extra.get("offset", round(hdr["offset"]))
+    if abs(float(hdr["offset"]) - offset) > 1e-3 * max(1.0, abs(float(hdr["offset"]))) and "offset" not in extra:
+        warnings.warn(
+            "An offset does not fit in the integer offset word of SU and is written rounded (as 0 for less than "
+            "half a unit): SU programs that use the offset will be wrong. Use smaller units for the coordinates "
+            "(SU data is usually in meters, not km).",
+            stacklevel=3,
+        )
     row["offset"] = int(offset)
     return out
 

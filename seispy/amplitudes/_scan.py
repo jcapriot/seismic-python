@@ -18,7 +18,9 @@ def _pgc(upstream, *, ntrscan=200, lwindow=1.0):
     source = as_trace_iterator(upstream)
 
     def gain_function(total, count, dt):
-        lw = int(0.5 * lwindow / dt + 0.5)
+        # (supgc keeps dt and lwindow as floats: with double precision, a window that is a half number of samples,
+        # 0.5 s at 4 ms, would be rounded the other way)
+        lw = int(0.5 * float(np.float32(lwindow)) / float(np.float32(dt)) + 0.5)
         # (the function of the SU library)
         return _pgc_c.gain_function(total.astype(np.float32), count, lw)
 

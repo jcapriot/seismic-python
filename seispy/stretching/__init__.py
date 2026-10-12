@@ -484,20 +484,25 @@ def _tsq(upstream, *, tmin=None, dt=None, flag=1):
         d_in = trace.d_sample
         if not d_in:
             raise ValueError("The trace has no sample interval.")
+        # (sutsq works in single precision: the times that are interpolated to are float32 arithmetic of float32
+        # values. In double precision a time can fall on the other side of a rounding of the interpolation table.)
+        f32 = np.float32
+        dt32 = f32(d_in)
         if flag == 1:
-            first = 0.1 * nt * d_in if tmin is None else tmin
-            d_out = first * 2.0 * d_in
-            t_max = nt * d_in
+            first = f32(0.1 * nt * float(dt32)) if tmin is None else f32(tmin)
+            d_out = f32(float(first) * 2.0 * float(dt32))
+            t_max = f32(nt) * dt32
             n_out = 1 + int(t_max * t_max / d_out)
             # the times (in the time squared units, which the input is sampled in) that are evenly spaced squared
-            times = np.sqrt(np.arange(n_out) * d_out)
+            times = np.sqrt((np.arange(n_out, dtype=np.float64).astype(f32) * d_out).astype(np.float64)).astype(f32)
         else:
             # (sutsq has the default of dt as the input's sample interval, and then sets it to 0 if it is given)
-            d_out = 0.004 if dt is None else dt
-            n_out = 1 + int(np.sqrt(nt * d_in) / d_out)
-            times = np.arange(n_out) ** 2 * d_out ** 2
-        y = _resample.interpolate(x, d_in, 0.0, times.astype(np.float32))
-        return trace.replace(y, d_sample=d_out)
+            d_out = f32(0.004) if dt is None else f32(dt)
+            n_out = 1 + int(np.sqrt(float(f32(nt) * dt32)) / float(d_out))
+            j = np.arange(n_out, dtype=np.float64).astype(f32)
+            times = ((j * j).astype(f32) * d_out).astype(f32) * d_out
+        y = _resample.interpolate(x, d_in, 0.0, np.ascontiguousarray(times, dtype=np.float32))
+        return trace.replace(y, d_sample=float(d_out))
 
     return per_trace(upstream, tsq_trace)
 

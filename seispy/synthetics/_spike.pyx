@@ -22,11 +22,14 @@ cdef class spike(spyc.BaseTraceIterator):
         self.offset = offset
 
         if spikes is None:
+            # (the defaults of suspike, ix1=ntr/4 etc., which count the traces and samples from 1. The sizes are
+            # python ints here, a size_t minus 1 would wrap around for few traces.)
+            n_tr, n_t = int(ntr), int(nt)
             spikes = [
-                 (ntr // 4, nt // 4 - 1),
-                 (ntr // 4, 3 * nt // 4 - 1),
-                 (3 * ntr // 4, nt // 4 - 1),
-                 (3 * ntr // 4, 3 * nt // 4 - 1),
+                 (n_tr // 4 - 1, n_t // 4 - 1),
+                 (n_tr // 4 - 1, 3 * n_t // 4 - 1),
+                 (3 * n_tr // 4 - 1, n_t // 4 - 1),
+                 (3 * n_tr // 4 - 1, 3 * n_t // 4 - 1),
              ]
 
         self.spikes = np.require(spikes, dtype=np.int32, requirements='C')

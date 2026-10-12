@@ -38,8 +38,10 @@ def randspike(*, n1=500, n2=100, dt=0.002, nspk=20, amax=0.2, mode=1, seed=None)
     ``seed`` makes it repeatable, by default it is the time. The random numbers are those of the generator of the SU
     library, so the spikes are those that surandspike makes for the same seed.
 
-    The spikes are on samples 0 to ``n1 - 2``. (surandspike puts them on samples 1 to ``n1``, one of them past the
-    end of the trace.) Where two spikes are on one sample the last one is kept.
+    The spikes are on samples 0 to ``n1 - 2``, the sample that their time falls in. surandspike puts each of them one
+    sample later (``it = t/dt + 1``, so on samples 1 to ``n1 - 1``, and never on the first one): the data of this
+    function are those of surandspike for the same seed, moved one sample earlier. Where two spikes are on one sample
+    the last one is kept.
     """
     if mode not in (1, 2):
         raise ValueError("mode must be 1 or 2")

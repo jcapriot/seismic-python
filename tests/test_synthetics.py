@@ -10,10 +10,10 @@ def test_spike_default():
     assert len(traces) == 32
     data = np.array([np.asarray(t) for t in traces])
     assert data.shape == (32, 64)
-    # Four unit spikes at the documented locations
+    # Four unit spikes at the locations of suspike (ix1=ntr/4=8 etc. count the traces from 1, spikes here from 0)
     npt.assert_equal(
         np.argwhere(data == 1.0),
-        [[8, 15], [8, 47], [24, 15], [24, 47]],
+        [[7, 15], [7, 47], [23, 15], [23, 47]],
     )
     assert data.sum() == 4.0
 

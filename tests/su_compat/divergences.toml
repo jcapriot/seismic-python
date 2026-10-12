@@ -42,3 +42,83 @@ mode = "loose"
 ignore_words = ["mute"]
 reason = """As `sumute` for mode=1 (mute below), where SU records the time in the `mute` word instead of `muts`."""
 verified = "sumute.c, and output: mute=550,600,650 from SU, 0 from seispy; the data are identical"
+
+[sunormalize-rms]
+mode = "expect_diff"
+reason = """A bug in SU: rmvesq (sunormalize.c) accumulates into its result (`(*rsq) += x*x`) and `rms` is never reset between traces, so the rms of every trace after the first also contains the rms of the one before, and the normalization is wrong (by a few percent here). seispy normalizes by the rms of each trace. norm=max, med and balmed do not have this."""
+verified = "sunormalize.c, and SU's output is bit-exact with an emulation that carries the rms over from trace to trace; sunormalize-rms-first-trace matches on a single trace"
+
+[suacor]
+mode = "loose"
+ignore_words = ["delrt", "f1"]
+reason = """SU sets delrt=0 and f1 = -dt*ntout/2 (suacor.c), which is half a sample too early for an odd ntout (-0.102 s for ntout=51, dt=4 ms, while the first lag is -25*dt = -0.1 s). seispy keeps the time of the first sample, -0.1 s, in the sample start, which is delrt=-100 ms. The data are the same."""
+verified = "suacor.c lines 67-83, and output: SU f1=-0.102, delrt=0; seispy f1=0, delrt=-100; data identical"
+
+[sudivstack]
+mode = "loose"
+ignore_words = ["tracl", "nhs"]
+reason = """tracl as in `sustack`. seispy also sets the fold (nhs, the number of traces that were stacked) of every stack, while SU's sudivstack only renumbers tracl (and leaves nhs of the first trace)."""
+ref = "seispy/stacking/__init__.py"
+verified = "sudivstack.c ('Trace header fields modified: tracl' and no nhs), and output: nhs=0 from SU, 8 from seispy"
+
+[suplane]
+mode = "loose"
+ignore_words = ["tracr", "cdp", "cdpt", "trid", "sx", "gx", "counit"]
+reason = """seispy's sources describe their traces as one gather: ensemble_number=1 and ensemble_trace_number 1..ntr (cdp, \
+cdpt), the trace type seismic data (trid=1), the source at x=itr and the receiver at x=itr+offset in length units \
+(sx, gx, counit), so that the offset is a distance and not just a number. SU's suplane sets the offset and leaves \
+those words 0. SU also numbers the traces in tracr (as tracl), which seispy has no value for."""
+ref = "seispy/synthetics/_plane.pyx"
+verified = "suplane.c header words, and output: SU sets tracl, tracr, offset only; seispy cdp=1, cdpt=1..32, trid=1, sx=0..31, gx=400..431, counit=1; the data are identical"
+
+[suplane-params]
+mode = "loose"
+ignore_words = ["tracr", "cdp", "cdpt", "trid", "sx", "gx", "counit"]
+reason = """seispy's sources describe their traces as one gather: ensemble_number=1 and ensemble_trace_number 1..ntr (cdp, \
+cdpt), the trace type seismic data (trid=1), the source at x=itr and the receiver at x=itr+offset in length units \
+(sx, gx, counit), so that the offset is a distance and not just a number. SU's suplane sets the offset and leaves \
+those words 0. SU also numbers the traces in tracr (as tracl), which seispy has no value for."""
+ref = "seispy/synthetics/_plane.pyx"
+verified = "suplane.c header words, and output: SU sets tracl, tracr, offset only; seispy cdp=1, cdpt=1..32, trid=1, sx=0..31, gx=400..431, counit=1; the data are identical"
+
+[suspike]
+mode = "loose"
+ignore_words = ["cdp", "cdpt", "trid", "sx", "gx", "counit"]
+reason = """seispy's sources describe their traces as one gather: ensemble_number=1 and ensemble_trace_number 1..ntr (cdp, \
+cdpt), the trace type seismic data (trid=1), the source at x=itr and the receiver at x=itr+offset in length units \
+(sx, gx, counit), so that the offset is a distance and not just a number. SU's suspike sets the offset and leaves \
+those words 0."""
+ref = "seispy/synthetics/_spike.pyx"
+verified = "suspike.c header words, and output: SU sets tracl and offset only (no tracr); seispy cdp=1, cdpt=1..32, trid=1, sx=0..31, gx=400..431, counit=1; the data are identical"
+
+[suspike-params]
+mode = "loose"
+ignore_words = ["cdp", "cdpt", "trid", "sx", "gx", "counit"]
+reason = """seispy's sources describe their traces as one gather: ensemble_number=1 and ensemble_trace_number 1..ntr (cdp, \
+cdpt), the trace type seismic data (trid=1), the source at x=itr and the receiver at x=itr+offset in length units \
+(sx, gx, counit), so that the offset is a distance and not just a number. SU's suspike sets the offset and leaves \
+those words 0."""
+ref = "seispy/synthetics/_spike.pyx"
+verified = "suspike.c header words, and output: SU sets tracl and offset only (no tracr); seispy cdp=1, cdpt=1..32, trid=1, sx=0..31, gx=400..431, counit=1; the data are identical"
+
+[surandspike]
+mode = "expect_diff"
+reason = """surandspike puts a spike at it = t/dt + 1 (surandspike.c): one sample after the sample that its time falls \
+in, so on samples 1 to n1-1 and never on the first. seispy puts it on the sample of its time, so its spikes are \
+the same ones (same random numbers for the same seed) one sample earlier. The cdp, cdpt and trid differences are \
+those of the other sources (seispy makes one gather of seismic traces). test_randspike.py checks the shift."""
+ref = "seispy/synthetics/_sources.py"
+verified = "surandspike.c, and output: seispy[:-1] == SU[1:] exactly, in modes 1 and 2; SU's spikes are on samples 1..n1-1"
+
+[susynlv]
+mode = "loose"
+rtol = 1e-4
+ignore_words = ["tracr", "fldr", "tracf", "cdp", "cdpt", "offset", "scalco", "sx", "gx", "d2", "f2"]
+reason = """The traces (data) are the same. The headers: SU writes the shot number in fldr, the offset number in tracf, \
+tracr, and d2/f2, and leaves cdp 0 for shots; seispy has no values for fldr, tracf, tracr, d2, f2 and writes the \
+shot as ensemble_number (cdp) and the offset number as ensemble_trace_number (cdpt). The coordinates: SU multiplies \
+the kilounits of its parameters (km) by 1000 for the header words, so sx=200, gx=300, offset=100 (m); seispy keeps \
+the units of the parameters in tx_loc and rx_loc (0.2, 0.3, offset 0.1), which SU's integer words can only hold with \
+scalco=-10000 (sx and gx) and not at all for the offset (written as 0, with a warning)."""
+ref = "seispy/synthetics/_synlv.pyx"
+verified = "susynlv.c lines 255-270 (kilounits), and output: SU offset=100..400, sx=0/200, gx=100..600, fldr=1,1,1,1,2,2,2,2; seispy offset=0, scalco=-10000, sx=0/2000, gx=1000.., cdp=1,1,1,1,2,2,2,2; data equal to rtol 1e-4"

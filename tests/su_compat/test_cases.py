@@ -8,13 +8,22 @@ DIVERGENCES = load_divergences()
 
 
 @pytest.mark.parametrize("case", CASES, ids=[c.name for c in CASES])
-def test_matches_su(su, case):
+def test_matches_su(su, case, tmp_path):
     div = DIVERGENCES.get(case.name)
     if div is not None and div.mode == "skip":
         pytest.skip(div.reason)
 
-    raw = su.run(case.source)
-    ref = su.run(case.source + " | " + case.su)
+    if case.source:
+        raw = su.run(case.source)
+        if "{tmp}" in case.su:  # (programs that read the data a second time, from a file)
+            path = tmp_path / "input.su"
+            path.write_bytes(raw)
+            ref = su.run(case.su.replace("{tmp}", str(path)), stdin=raw)
+        else:
+            ref = su.run(case.source + " | " + case.su)
+    else:  # (a source: the program makes the traces)
+        raw = None
+        ref = su.run(case.su)
     ours = run_ours(raw, case.stages)
 
     rtol, atol, ignore = case.rtol, case.atol, set(case.ignore_words)

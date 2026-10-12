@@ -19,7 +19,8 @@ def make_traces(n=4, ns=32):
             tx_loc=[100.0 * i, 5.0, 2.0],
             rx_loc=[100.0 * i + 50.0 * (1 + i % 2), 5.0, 3.0],
             fold=3,
-            extra={"fldr": 100 + i, "tracl": i + 1, "muts": 12},
+            trace_id=i + 1,
+            extra={"fldr": 100 + i, "tracr": i + 1, "muts": 12},
         )
         out.append(tr)
     return out
@@ -47,6 +48,7 @@ def test_round_trip_through_a_stream():
         assert b.header["offset"] == pytest.approx(a.header["offset"])
         np.testing.assert_allclose(b.header["tx_loc"], a.header["tx_loc"])
         np.testing.assert_allclose(b.header["rx_loc"], a.header["rx_loc"])
+        assert b.header["trace_id"] == a.header["trace_id"]
         assert b.extra == {k: v for k, v in a.extra.items()}
 
     # and a second pass is byte identical
@@ -63,7 +65,7 @@ def test_endian(endian):
     back = list(read_su(io.BytesIO(buf.getvalue()), endian=endian))
     np.testing.assert_array_equal(np.asarray(back[1]), np.asarray(traces[1]))
     assert back[1].extra["fldr"] == 101
-    # the first word, tracl, is a big/little endian int32
+    # the first word, tracl (the trace_id), is a big/little endian int32
     assert int.from_bytes(buf.getvalue()[:4], endian) == 1
 
 
@@ -156,3 +158,16 @@ def test_offset_only_trace_has_no_coordinates_after_a_stage_moves_it():
     write_su([moved], out)
     (back,) = np.frombuffer(out.getvalue()[:240], dtype=su_module._native_dtype())
     assert (back["sx"], back["gx"], back["sy"], back["gy"], back["offset"]) == (0, 0, 0, 0, 0)
+
+
+def test_fractional_offset_warns():
+    tr = Trace(np.zeros(4, dtype=np.float32), d_sample=0.004).replace(tx_loc=[0.0, 0.0, 0.0], rx_loc=[0.1, 0.0, 0.0])
+    with pytest.warns(UserWarning, match="offset"):
+        write_su([tr], io.BytesIO())
+    # (a whole number, even a large one, and a missing offset, do not)
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        write_su([tr.replace(rx_loc=[400.0, 0.0, 0.0])], io.BytesIO())
+        write_su([tr.replace(rx_loc=[0.0, 0.0, 0.0])], io.BytesIO())

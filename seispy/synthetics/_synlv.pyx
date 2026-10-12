@@ -249,7 +249,7 @@ cdef class synlv(spyc.BaseTraceIterator):
 
         cdef spyc.spy_trace_header * hdr = spyc.new_hdr(self.nt)
 
-        hdr.trace_id = self.tracl
+        hdr.trace_id = self.tracl + 1  # (SU's tracl counts from 1)
         hdr.coord_unit = spyc.CoordinateUnit.length
         hdr.trace_type = 1  # seismic data
         hdr.d_sample = self.dt

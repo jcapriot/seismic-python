@@ -85,8 +85,14 @@ def load_divergences(path=DIVERGENCES):
 
 
 def run_ours(raw, stages):
-    """The SU bytes that the seispy stages make from SU bytes"""
-    traces = read_su(io.BytesIO(raw))
+    """The SU bytes that the seispy stages make from SU bytes. ``raw`` is None for a source: the first of the
+    stages then makes the traces itself."""
+    stages = list(stages)
+    if raw is None:
+        name, kwargs = stages.pop(0)
+        traces = resolve_stage(name)(**kwargs)
+    else:
+        traces = read_su(io.BytesIO(raw))
     for name, kwargs in stages:
         traces = traces | resolve_stage(name)(**kwargs)
     out = io.BytesIO()
