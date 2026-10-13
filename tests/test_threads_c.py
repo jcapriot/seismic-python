@@ -136,3 +136,52 @@ def test_threads_can_each_estimate_residual_statics():
             lambda _: resstat(keyed, ntpick=5, niter=2, cmp=lambda t: t.header['ensemble_trace_number'] % 2), range(16)
         ))
     assert all(r == expected for r in results)
+
+
+def test_threads_can_each_datum_gathers():
+    import concurrent.futures
+
+    from seispy.datuming import datumfd
+
+    panel = list(synlv(nt=101, nxm=12))
+    vel = np.full((12, 6), 2200.0, np.float32)
+    keyed = [t.replace(rx_loc=[10.0 * i, 0.0, 0.0]) for i, t in enumerate(panel)]
+
+    def datumed(_):
+        return samples(from_iterable(keyed) | datumfd(vel, vel, nx=6, nsx=2, nz=4, dz=8.0, dx=10.0))
+
+    expected = datumed(0)
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        for got in pool.map(datumed, range(8)):
+            npt.assert_allclose(got, expected, rtol=1e-4, atol=1e-6 * max(1.0, float(np.abs(expected).max())))
+
+
+def test_threads_can_each_datum_by_kirchhoff():
+    import concurrent.futures
+
+    from seispy.container import Trace
+    from seispy.datuming import datumk2dr, kdmdcr
+
+    xs = 25.0 * np.arange(41)
+    x = 25.0 * np.arange(41)
+    z = 25.0 * np.arange(17)
+    ttab = (np.sqrt((x[None, None, :] - xs[:, None, None]) ** 2 + z[None, :, None] ** 2) / 2000.0).astype(np.float32)
+    t = np.arange(200) * 0.004
+    shot = [Trace(np.exp(-((t - 0.3 - 0.0005 * i) * 60) ** 2).astype(np.float32), d_sample=0.004).replace(
+        tx_loc=[0.0, 0.0, 0.0], rx_loc=[25.0 * i, 0.0, 0.0]) for i in range(21)]
+    common = dict(fxt=0.0, dxt=25.0, fzt=0.0, dzt=25.0, fs=0.0, ds=25.0, nxso=1, dxso=25.0, nxgo=21, dxgo=25.0,
+                  aperx=300.0)
+
+    def k2d(_):
+        return samples(from_iterable(shot) | datumk2dr(
+            ttab, fxi=0.0, dxi=25.0, nxi=41, sgn=1, surf=[[(0, 0), (9999, 0)], [(0, 100), (9999, 100)]], fxso=0.0,
+            fxgo=0.0, fzo=50.0, nzo=6, dzo=10.0, **{k: v for k, v in common.items() if k not in ('fxso',)}))
+
+    def dc(_):
+        return samples(from_iterable(shot) | kdmdcr(ttab, zrec=0.0, zdat=100.0, **common))
+
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        for function in (k2d, dc):
+            expected = function(0)
+            for got in pool.map(function, range(8)):
+                npt.assert_allclose(got, expected, rtol=1e-4, atol=1e-6 * max(1.0, float(np.abs(expected).max())))
