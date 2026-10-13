@@ -852,6 +852,23 @@ cdef extern from "su.h" nogil:
         float ft, const float *vrms_in, float *ptx)
     int su_datumfd(int nt, float dt, int nx, int nsx, int nz, float dz, float dx, float x_0, int buff, int tap_len,
         int mx, int mz, const float *vel1, const float *vel2, const float *gx, const float *data, float *out)
+    int su_datumk2d_geometry(int nu0, const float *x0, const float *z0, int nu1, const float *x1, const float *z1,
+        float dsmax, int nxi, float fxi, float dxi, int ns, float fs, float ds, float *szif, float *sz, float *nangl)
+    void su_datumk2d_tables(int ns, int nr, int nzt, float dr, float dzt, float fzt, float v0, float dvz, const float *sz,
+        int nxt, float fxt, float dxt, float fs, float ds, float *tb, float *pb, float *sigb, float *angb, float *ttab)
+    int su_datumk2d_trace(const float *trace, int nt, float ft, float dt, float *dat, float aperx, int nx, float fx, float dx,
+        int nz, float fz, float dz, int mtmax, float xm, float fmax, int nxi, float fxi, float dxi, float angmax,
+        int ns, float fs, float ds, int nr, const float *tb, const float *pb, const float *angb, const float *sigb,
+        const float *ttab, int nzt, float fzt, float dzt, int nxt, float fxt, float dxt, int antiali, int sgn,
+        const float *szif, const float *nangl)
+    int su_kdmdcr_trace(const float *trace, int nt, float ft, float dt, float sx, float gx, float *dat, float aperx,
+        int nx, float fxin, float dxgo, int nzo, float fzo, float dzo, int nxi, float fxi, float dxi, int ns, float fs,
+        float ds, const float *ttab, int nzt, float fzt, float dzt, int nxt, float fxt, float dxt, const float *szif,
+        float v0, float freq)
+    int su_kdmdcs_trace(const float *trace, int nt, float ft, float dt, float sx, float gx, float *dat, float aperx,
+        int nx, float fxin, float dxso, int nzo, float fzo, float dzo, int nxi, float fxi, float dxi, int ns, float fs,
+        float ds, const float *ttab, int nzt, float fzt, float dzt, int nxt, float fxt, float dxt, const float *szif,
+        float v0, int dc, int ngl, float freq)
     void su_polar_station(int nt, int iwl, int iwin, float rlq, int rl, int theta, int phi, int tau, int ellip,
         int pln, int f1, int l1, int amp, int dir, float fangle, const float *data, float *out)
     void su_eipofi_station(int nt, int iwl, float pwr, int cubic, float *data, float *polar)

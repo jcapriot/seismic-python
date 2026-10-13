@@ -1,6 +1,8 @@
 """
 Datuming (``su/main/datuming``): SUDATUMFD (``datumfd``: zero offset finite difference datuming of shot gathers by the
-one-way wave equation, with a zero velocity layer for an irregular surface).
+one-way wave equation, with a zero velocity layer for an irregular surface), and the Kirchhoff datuming programs
+SUDATUMK2DR, SUDATUMK2DS, SUKDMDCR and SUKDMDCS (``datumk2dr``, ``datumk2ds``, ``kdmdcr``, ``kdmdcs``, from traveltime
+tables).
 
 Where a program plainly does not do what its documentation says this does what the documentation says; the differences
 are with each stage.
@@ -12,8 +14,9 @@ import numpy as np
 from ..container import as_trace_iterator, from_iterable
 from ..stage import Stage
 from . import _kernels
+from ._kirchhoff import datumk2dr, datumk2ds, kdmdcr, kdmdcs
 
-__all__ = ['datumfd']
+__all__ = ['datumfd', 'datumk2dr', 'datumk2ds', 'kdmdcr', 'kdmdcs']
 
 F32 = np.float32
 

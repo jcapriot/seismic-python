@@ -2,6 +2,7 @@ module_path = 'seispy/datuming'
 
 python_sources = [
     '__init__.py',
+    '_kirchhoff.py',
 ]
 
 py.extension_module(
