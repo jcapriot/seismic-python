@@ -12,8 +12,9 @@ import numpy as np
 from . import _rng
 from ..container import as_trace_iterator, from_iterable
 from ..stage import header_value, stage
+from ._extra import harlan, sembase, semgroup
 
-__all__ = ['addnoise', 'addflatnoise', 'jitter']
+__all__ = ['addnoise', 'addflatnoise', 'jitter', 'harlan', 'sembase', 'semgroup']
 
 
 # --------------------------------------------------------------------------------------------------------- noise

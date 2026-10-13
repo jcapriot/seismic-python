@@ -5,7 +5,7 @@ import pytest
 
 from seispy import attributes
 from seispy.amplitudes import centsamp, dipdivcor
-from seispy.container import from_iterable
+from seispy.container import Trace, from_iterable
 from seispy.convolution import acorfrac, conv
 from seispy.decon import cddecon, fxdecon, phidecon
 from seispy.filters import frac, minphase, phase, tvband
@@ -182,6 +182,34 @@ def test_threads_can_each_datum_by_kirchhoff():
 
     with concurrent.futures.ThreadPoolExecutor(8) as pool:
         for function in (k2d, dc):
+            expected = function(0)
+            for got in pool.map(function, range(8)):
+                npt.assert_allclose(got, expected, rtol=1e-4, atol=1e-6 * max(1.0, float(np.abs(expected).max())))
+
+
+def test_threads_can_each_run_the_noise_programs():
+    import concurrent.futures
+
+    from seispy.noise import harlan, sembase, semgroup
+
+    rng = np.random.default_rng(0)
+    t = np.arange(160) * 0.004
+    traces = [Trace(((np.exp(-((t - 0.3 - 1e-4 * 20.0 * i) * 40) ** 2)) + 0.2 * rng.normal(size=160)).astype(np.float32),
+                    d_sample=0.004).replace(ensemble_number=i // 12 + 1, tx_loc=[0.0, 0.0, 0.0],
+                                            rx_loc=[10.0 * (i % 12), 0.0, 0.0]) for i in range(24)]
+    cdp = [Trace(np.asarray(x), d_sample=0.004).replace(ensemble_number=i + 1) for i, x in enumerate(traces)]
+
+    def h(_):
+        return samples(from_iterable(traces) | harlan(gopt=3, pmin1=-200.0, pmax1=200.0, nslopes=30, rel1=0.2, seed=5))
+
+    def g(_):
+        return samples(from_iterable(traces) | semgroup(locmaxscan=50.0))
+
+    def b(_):
+        return samples(from_iterable(cdp) | sembase(outputinc=0.5, outputshift=10))
+
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        for function in (h, g, b):
             expected = function(0)
             for got in pool.map(function, range(8)):
                 npt.assert_allclose(got, expected, rtol=1e-4, atol=1e-6 * max(1.0, float(np.abs(expected).max())))
