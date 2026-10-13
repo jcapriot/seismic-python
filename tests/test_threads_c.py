@@ -136,3 +136,21 @@ def test_threads_can_each_estimate_residual_statics():
             lambda _: resstat(keyed, ntpick=5, niter=2, cmp=lambda t: t.header['ensemble_trace_number'] % 2), range(16)
         ))
     assert all(r == expected for r in results)
+
+
+def test_threads_can_each_datum_gathers():
+    import concurrent.futures
+
+    from seispy.datuming import datumfd
+
+    panel = list(synlv(nt=101, nxm=12))
+    vel = np.full((12, 6), 2200.0, np.float32)
+    keyed = [t.replace(rx_loc=[10.0 * i, 0.0, 0.0]) for i, t in enumerate(panel)]
+
+    def datumed(_):
+        return samples(from_iterable(keyed) | datumfd(vel, vel, nx=6, nsx=2, nz=4, dz=8.0, dx=10.0))
+
+    expected = datumed(0)
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        for got in pool.map(datumed, range(8)):
+            npt.assert_allclose(got, expected, rtol=1e-4, atol=1e-6 * max(1.0, float(np.abs(expected).max())))

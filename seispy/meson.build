@@ -22,6 +22,7 @@ subdir('picking')
 subdir('statics')
 subdir('interp')
 subdir('multicomponent')
+subdir('datuming')
 
 python_sources = [
     '__init__.py',

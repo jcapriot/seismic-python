@@ -850,6 +850,8 @@ cdef extern from "su.h" nogil:
         int lenx, int xopt, float dt, int iopt, int deriv, int linear, float *out)
     void su_ocext_offset(float offset, float offextr, float fmax, float sdmo, int nx, float dx, int nt, float dt,
         float ft, const float *vrms_in, float *ptx)
+    int su_datumfd(int nt, float dt, int nx, int nsx, int nz, float dz, float dx, float x_0, int buff, int tap_len,
+        int mx, int mz, const float *vel1, const float *vel2, const float *gx, const float *data, float *out)
     void su_polar_station(int nt, int iwl, int iwin, float rlq, int rl, int theta, int phi, int tau, int ellip,
         int pln, int f1, int l1, int amp, int dir, float fangle, const float *data, float *out)
     void su_eipofi_station(int nt, int iwl, float pwr, int cubic, float *data, float *polar)
