@@ -13,6 +13,7 @@ from seispy.parallel import pmap
 from seispy.stretching import dlmo, ilog, log, nmo_a, reduce, taupnmo, ttoz
 from seispy.synthetics import synlv
 from seispy.tapering import ramp, taper, txtaper
+from seispy.interp import interp
 from seispy.velocity import relanan, vel2df, velan_nsel, velan_uccs
 from seispy.transforms import ccwt, cepstrum, clogfft, iclogfft, radon, taup, wfft
 from seispy.windowing import mute
@@ -67,6 +68,7 @@ PANEL_STAGES = {
     'dipdivcor': lambda: dipdivcor(25.0, np=10, vmig=2000.0),
     'fxdecon': lambda: fxdecon(ntrw=6, ntrf=2),
     'vel2df': lambda: vel2df(tn=0.2, nv=4, nvh=3),
+    'interp': lambda: interp(ninterp=1, xopt=1),
     'relanan': lambda: relanan(x=[1.0, 10.0], z=[5.0, 5.0], nr1=3, nr2=3, dzratio=2),
     'velan_uccs': lambda: velan_uccs(nv=3),
     'velan_nsel': lambda: velan_nsel(nv=3),
@@ -85,6 +87,40 @@ def test_threads_can_each_transform_a_panel(name):
         results = list(pool.map(lambda _: samples(from_iterable(panel) | stage), range(16)))
     for got in results:
         npt.assert_array_equal(got, expected)
+
+
+def test_threads_can_each_analyse_three_component_stations():
+    import concurrent.futures
+
+    from seispy.multicomponent import alford, eipofi, polar
+
+    panel = list(synlv(nt=120, nxm=12))
+    stations = [panel[i:i + 3] for i in range(0, 12, 3)]
+    flat = [t for s in stations for t in s]
+    four = [panel[i:i + 4] for i in range(0, 12, 4)]
+    flat4 = [t for s in four for t in s]
+
+    def attributes(_):
+        out = polar(flat, wl=0.1, theta=2, phi=3, tau=1, amp=1)
+        return {k: np.array([np.asarray(t) for t in v]) for k, v in out.items()}
+
+    def filtered(_):
+        return samples(from_iterable(flat) | eipofi(wl=0.1))
+
+    def rotated(_):
+        return samples(from_iterable(flat4) | alford(ntraces=1, angle_inc=10.0))
+
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        for function in (attributes, filtered, rotated):
+            expected = function(0)
+            for got in pool.map(function, range(8)):
+                if isinstance(expected, dict):
+                    assert got.keys() == expected.keys()
+                    for k in expected:
+                        npt.assert_allclose(got[k], expected[k], rtol=1e-4, atol=1e-6)
+                else:
+                    # (the float sums of the same code differ in the last bits on some machines: see the notes on the tests)
+                    npt.assert_allclose(got, expected, rtol=1e-4, atol=1e-6 * max(1.0, float(np.abs(expected).max())))
 
 
 def test_threads_can_each_estimate_residual_statics():

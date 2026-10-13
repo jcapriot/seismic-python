@@ -20,6 +20,8 @@ subdir('welllogs')
 subdir('dmo')
 subdir('picking')
 subdir('statics')
+subdir('interp')
+subdir('multicomponent')
 
 python_sources = [
     '__init__.py',

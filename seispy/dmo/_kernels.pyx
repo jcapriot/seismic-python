@@ -43,6 +43,16 @@ def fk_offset(float[:, ::1] gather, float offset, float fmax, float sdmo, int nx
         su.su_dmofk_offset(offset, fmax, sdmo, nx, dx, nt, dt, ft, &vrms_[0], &gather[0, 0])
 
 
+def ocext_offset(float[:, ::1] gather, float offset, float offextr, float fmax, float sdmo, int nx, float dx, float dt,
+                 float ft, const float[::1] vrms_):
+    """The gather (nxfft + 2, nt) of an offset extrapolated to the offset offextr, in place (SUOCEXT)"""
+    cdef int nt = gather.shape[1]
+    if vrms_.shape[0] != nt or gather.shape[0] < su.su_dmofk_nxfft(nx, dx, offset) + 2:
+        raise ValueError("The gather needs nxfft + 2 rows, and the velocities a value for each sample.")
+    with nogil:
+        su.su_ocext_offset(offset, offextr, fmax, sdmo, nx, dx, nt, dt, ft, &vrms_[0], &gather[0, 0])
+
+
 def kcw_table(int ntable, float gamma):
     """The tables z/h and b/h of converted waves for the velocity ratio gamma"""
     cdef:
