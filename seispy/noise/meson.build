@@ -2,11 +2,23 @@ module_path = 'seispy/noise'
 
 python_sources = [
     '__init__.py',
+    '_extra.py',
 ]
 
 py.extension_module(
     '_rng',
     '_rng.pyx',
+    cython_args: cython_args,
+    cpp_args: cython_c_args,
+    install: true,
+    limited_api: limited_api,
+    subdir: module_path,
+    dependencies : [py_dep, su_dep],
+)
+
+py.extension_module(
+    '_kernels',
+    '_kernels.pyx',
     cython_args: cython_args,
     cpp_args: cython_c_args,
     install: true,

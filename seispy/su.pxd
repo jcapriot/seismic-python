@@ -850,6 +850,14 @@ cdef extern from "su.h" nogil:
         int lenx, int xopt, float dt, int iopt, int deriv, int linear, float *out)
     void su_ocext_offset(float offset, float offextr, float fmax, float sdmo, int nx, float dx, int nt, float dt,
         float ft, const float *vrms_in, float *ptx)
+    void su_sem_scan(const float *data, const int *aloc, int numrolling, double scanloc, double locminscan,
+        double locmaxscan, float smin, float sstep, int jsmax, float *adip, float *apow, float *asem, int lendip,
+        int *numout)
+    void su_sem_wsmooth(const float *val, const float *wgt, int len, int minsd, int maxsd, float *sval)
+    int su_harlan(int rgt, int sts, int norm, int anenv, int scl, int seed, int sditer, int niter, int nintlh, float dt,
+        int nt, int nx, int gopt, float prewhite, int ninterp, float offref, float depthref, float interoff,
+        float pmin1, float pmax1, float pmin2, float pmax2, int np, float dx, float c, float rel1, float rel2,
+        float r1, float r2, float fx, float pmula, float pmulb, const float *in_traces, float *signal, float *noise)
     int su_datumfd(int nt, float dt, int nx, int nsx, int nz, float dz, float dx, float x_0, int buff, int tap_len,
         int mx, int mz, const float *vel1, const float *vel2, const float *gx, const float *data, float *out)
     int su_datumk2d_geometry(int nu0, const float *x0, const float *z0, int nu1, const float *x1, const float *z1,
