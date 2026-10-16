@@ -5,6 +5,7 @@ Migration, with the library functions of the SU fork (``su_stolt``, ``su_migfd``
 """
 from .. cimport su
 import numpy as np
+from ..stretching import _resample  # (this fills the sinc table that ints8r and ints8c use, before any thread can need it)
 
 
 _MESSAGES = {-3: "The parameters are not allowed."}
@@ -175,4 +176,175 @@ def ktmig2d(const float[:, ::1] data, const float[:, ::1] vel, float dt, float d
     with nogil:
         status = su.su_ktmig2d(ntr, nt, dt, dx, h, angmax, nfc, fwidth, &data[0, 0], &vel[0, 0], &out[0, 0])
     _check(status)
+    return np.asarray(out)
+
+
+def migsplit(const float[:, ::1] section, const float[:, ::1] vel, int nz, float dz, float dt, float dx):
+    """Split-step Fourier depth migration of the section (nx, nt) with the velocity (nz, nx): (nx, nz)"""
+    cdef int nx = section.shape[0], nt = section.shape[1], status
+    cdef float[:, ::1] out = np.zeros((nx, nz), dtype=np.float32)
+    if vel.shape[0] != nz or vel.shape[1] != nx:
+        raise ValueError("The velocity must be (nz, nx).")
+    with nogil:
+        status = su.su_migsplit(nx, nt, nz, dz, dt, dx, &section[0, 0], &vel[0, 0], &out[0, 0])
+    _check(status)
+    return np.asarray(out)
+
+
+def gazmig(const float[:, ::1] section, float dt, float ft, float dx, int ntau, float dtau, float ftau,
+           const float[::1] vt, float qual, float ceil):
+    """Gazdag phase shift migration (with Q) of the section (nx, nt) with the velocity vt of the ntau migrated times:
+    (nx, ntau)"""
+    cdef int nx = section.shape[0], nt = section.shape[1], status
+    cdef float[:, ::1] out = np.zeros((nx, ntau), dtype=np.float32)
+    if vt.shape[0] != ntau:
+        raise ValueError("vt needs a velocity for each migrated time sample.")
+    with nogil:
+        status = su.su_gazmig(nx, nt, dt, ft, dx, ntau, dtau, ftau, &vt[0], qual, ceil, &section[0, 0], &out[0, 0])
+    _check(status)
+    return np.asarray(out)
+
+
+def migtk(const float[:, ::1] section, float dt, float dx, float fmax, int nxpad, int ltaper, float speed,
+          const float[::1] vt):
+    """The t-k migration of the section (nx, nt) with the interval velocities vt(t): (nx, nt)"""
+    cdef int nx = section.shape[0], nt = section.shape[1], status
+    cdef float[:, ::1] out = np.zeros((nx, nt), dtype=np.float32)
+    if vt.shape[0] != nt:
+        raise ValueError("vt needs a velocity for each time sample.")
+    with nogil:
+        status = su.su_migtk(nx, nt, dt, dx, fmax, nxpad, ltaper, speed, &vt[0], &section[0, 0], &out[0, 0])
+    _check(status)
+    return np.asarray(out)
+
+
+def migpsti(const float[:, ::1] section, float dt, float dx, const float[::1] ffil, int nxpad, int ltaper, int np_,
+            int ntflag, const float[::1] vnt, const float[::1] vt, const float[::1] etat):
+    """Phase shift migration with turning rays of the section (nx, nt) for a TI medium, with the functions of time of the
+    NMO velocity, the vertical velocity and eta: (nx, nt)"""
+    cdef int nx = section.shape[0], nt = section.shape[1], status
+    cdef float[:, ::1] out = np.zeros((nx, nt), dtype=np.float32)
+    if ffil.shape[0] != 4 or vnt.shape[0] != nt or vt.shape[0] != nt or etat.shape[0] != nt:
+        raise ValueError("ffil needs 4 values, and the velocities and eta a value for each time sample.")
+    with nogil:
+        status = su.su_migpsti(nx, nt, dt, dx, &ffil[0], nxpad, ltaper, np_, ntflag, &vnt[0], &vt[0], &etat[0],
+                               &section[0, 0], &out[0, 0])
+    _check(status)
+    return np.asarray(out)
+
+
+def _shot_status(int status):
+    if status == -3:
+        raise ValueError("The parameters (or the aperture, the frequencies f1 to f4 or the velocities) are not allowed.")
+    if status != 0:
+        raise ValueError("The migration failed.")
+
+
+def migpre_shot(str program, const float[:, ::1] gather, const float[:, ::1] vel, float dt, float dx, float dz, int dip,
+                int nflag, float fmax, float f1, float f2, float f3, float f4, int ix2, int ix3, int ixshot,
+                float[:, ::1] image):
+    """Add the image of one shot gather (nxo, nt) to image (nxo, nz): program is 'fd', 'ffd', 'sp' or 'pspi'; vel is (nz, nxo)"""
+    cdef int nxo = gather.shape[0], nt = gather.shape[1], nz = image.shape[1], status = 0
+    if vel.shape[0] != nz or vel.shape[1] != nxo or image.shape[0] != nxo:
+        raise ValueError("The velocity must be (nz, nxo) and the image (nxo, nz).")
+    if program == 'fd':
+        with nogil:
+            status = su.su_migprefd_shot(nt, nxo, nz, dt, dx, dz, dip, fmax, f1, f2, f3, f4, ix2, ix3, ixshot,
+                                         &gather[0, 0], &vel[0, 0], &image[0, 0])
+    elif program == 'ffd':
+        with nogil:
+            status = su.su_migpreffd_shot(nt, nxo, nz, dt, dx, dz, dip, fmax, f1, f2, f3, f4, ix2, ix3, ixshot,
+                                          &gather[0, 0], &vel[0, 0], &image[0, 0])
+    elif program == 'sp':
+        with nogil:
+            status = su.su_migpresp_shot(nt, nxo, nz, dt, dx, dz, fmax, f1, f2, f3, f4, ix2, ix3, ixshot,
+                                         &gather[0, 0], &vel[0, 0], &image[0, 0])
+    elif program == 'pspi':
+        with nogil:
+            status = su.su_migprepspi_shot(nt, nxo, nz, dt, dx, dz, nflag, fmax, f1, f2, f3, f4, ix2, ix3, ixshot,
+                                           &gather[0, 0], &vel[0, 0], &image[0, 0])
+    else:
+        raise ValueError("unknown program")
+    _shot_status(status)
+
+
+def migtopo2d_trace(const float[::1] trace, float[:, ::1] mig, float ft, float dt, float sx, float gx, float aperx,
+                    float fx, float dx, float fz, float dz, int ls, int mtmax, float dxm, float fmax, float angmax,
+                    float fs, float ds, const float[:, :, ::1] tb, const float[:, :, ::1] pb,
+                    const float[:, :, ::1] angb, const float[:, :, ::1] sigb, const float[:, :, ::1] ttab, float fzt,
+                    float dzt, float fxt, float dxt, float fxi, float dxi, const float[::1] nangl):
+    """Migrate one trace into the section mig (nxo, nzo); the tables are those of datuming._kernels.datumk2d_tables"""
+    cdef:
+        int nt = trace.shape[0], nx = mig.shape[0], nz = mig.shape[1], status
+        int ns = ttab.shape[0], nxt = ttab.shape[1], nzt = ttab.shape[2], nr = tb.shape[1], nxi = nangl.shape[0]
+    with nogil:
+        status = su.su_migtopo2d_trace(&trace[0], nt, ft, dt, sx, gx, &mig[0, 0], aperx, nx, fx, dx, nz, fz, dz, ls,
+                                       mtmax, dxm, fmax, angmax, ns, fs, ds, nr, &tb[0, 0, 0], &pb[0, 0, 0],
+                                       &angb[0, 0, 0], &sigb[0, 0, 0], &ttab[0, 0, 0], nzt, fzt, dzt, nxt, fxt, dxt,
+                                       nxi, fxi, dxi, &nangl[0])
+    if status:
+        raise ValueError("The trace is too long for the filter.")
+
+
+def invvxzco(const float[:, ::1] data, float dt, float offs, float dxm, float fxm, const float[:, ::1] vel, float dx,
+             float fx, float dz, int nxd, int nxb, int nxc, int nzc, float fxo, float dxo, int nxo, float fzo, float dzo,
+             int nzo, float fmax, float ang, int ls, const float[:, ::1] vp):
+    """The inversion (migration) of a common-offset gather (nxm, nt) with the velocity (nx, nz) (z fast): (nxo, nzo)"""
+    cdef int nxm = data.shape[0], nt = data.shape[1], nx = vel.shape[0], nz = vel.shape[1], status
+    cdef int pert = vp.shape[0] > 0
+    cdef float[:, ::1] out = np.zeros((nxo, nzo), dtype=np.float32)
+    cdef const float *vpp = NULL
+    if pert:
+        if vp.shape[0] != nx or vp.shape[1] != nz:
+            raise ValueError("The slowness perturbation must have the shape of the velocity.")
+        vpp = &vp[0, 0]
+    with nogil:
+        status = su.su_invvxzco(nxm, nt, dt, offs, dxm, fxm, nx, nz, dx, fx, dz, nxd, nxb, nxc, nzc, fxo, dxo, nxo, fzo, dzo,
+                                nzo, fmax, ang, ls, pert, &vel[0, 0], vpp, &data[0, 0], &out[0, 0])
+    if status == -1:
+        raise ValueError("The shot or receiver lie outside of the specified (x,z) grid, or the first output trace is out of "
+                         "the velocity model.")
+    if status == -4:
+        raise ValueError("The band nxb is too small for the offset.")
+    if status == -5:
+        raise ValueError("A raypath has too large a curvature: a smoother velocity is required.")
+    if status != 0:
+        raise ValueError("The parameters are not allowed.")
+    return np.asarray(out)
+
+
+def miggbzo(const float[:, ::1] section, const float[:, ::1] vel, float dt, float dx, float dz, float bwh, float fmin,
+            float fmax, float amin, float amax):
+    """Migration of the zero-offset section (nx, nt) by Gaussian beams, with the velocity (nx, nz) (z fast): (nx, nz)"""
+    cdef int nx = section.shape[0], nt = section.shape[1], nz = vel.shape[1], status
+    cdef float[:, ::1] out = np.zeros((nx, nz), dtype=np.float32)
+    if vel.shape[0] != nx:
+        raise ValueError("The velocity must be (nx, nz), with nx the number of traces.")
+    with nogil:
+        status = su.su_miggbzo(nt, dt, nx, dx, nz, dz, bwh, fmin, fmax, amin, amax, &section[0, 0], &vel[0, 0], &out[0, 0])
+    if status == -4:
+        raise ValueError("The beam half-width bwh is too small for the trace interval dx.")
+    if status != 0:
+        raise ValueError("The parameters are not allowed.")
+    return np.asarray(out)
+
+
+def miggbzoan(const float[:, ::1] section, const float[:, ::1] a1111, const float[:, ::1] a3333,
+              const float[:, ::1] a1133, const float[:, ::1] a1313, const float[:, ::1] a1113,
+              const float[:, ::1] a3313, float dt, float dx, float dz, float bwh, float fmin, float fmax, float amin,
+              float amax):
+    """Migration of the zero-offset section (nx, nt) by Gaussian beams in an anisotropic medium of the elastic coefficients
+    (nx, nz) (z fast): (nx, nz)"""
+    cdef int nx = section.shape[0], nt = section.shape[1], nz = a3333.shape[1], status
+    cdef float[:, ::1] out = np.zeros((nx, nz), dtype=np.float32)
+    for a in (a1111, a3333, a1133, a1313, a1113, a3313):
+        if a.shape[0] != nx or a.shape[1] != nz:
+            raise ValueError("The elastic coefficients must all be (nx, nz), with nx the number of traces.")
+    with nogil:
+        status = su.su_miggbzoan(nt, dt, nx, dx, nz, dz, bwh, fmin, fmax, amin, amax, &section[0, 0], &a1111[0, 0],
+                                 &a3333[0, 0], &a1133[0, 0], &a1313[0, 0], &a1113[0, 0], &a3313[0, 0], &out[0, 0])
+    if status == -4:
+        raise ValueError("The beam half-width bwh is too small for the trace interval dx.")
+    if status != 0:
+        raise ValueError("The parameters are not allowed.")
     return np.asarray(out)

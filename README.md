@@ -413,6 +413,11 @@ categories. Their parameters are the SU parameters, as keyword arguments.
 | `seispy.synthetics.remac2d`, `remel2dan` | `suremac2d`, `suremel2dan` | acoustic and elastic anisotropic 2-D Fourier-method modelling with the rapid expansion (REM) time integration, free of grid dispersion and of a limit on `dt`: arrays in, section streams and `Snapshots` out |
 | `seispy.synthetics.fctanismod` | `sufctanismod` | elastic finite-difference modelling in media with a vertical symmetry axis, with the flux-corrected transport (FCT) against grid dispersion: arrays or profiles in, seismograms as trace streams and the wavefield as `Snapshots` |
 | `seispy.migration.stolt` | `sustolt` | Stolt (f-k) migration of stacked data or common-offset gathers, with a v(t) stretch and offset mixing |
+| `seispy.migration.migsplit`, `gazmig`, `migtk`, `migpsti` | `sumigsplit`, `sugazmig`, `sumigtk`, `sumigpsti` | split-step depth migration, Gazdag phase shift time migration with attenuation Q, the t-k domain method, and phase shift migration with turning rays for TI media (SU library functions; the TI table's slope range and an out-of-range read are fixed) |
+| `seispy.migration.migprefd`, `migpreffd`, `migpresp`, `migprepspi` | `sumigprefd`, `sumigpreffd`, `sumigpresp`, `sumigprepspi` | 2-D prestack common-shot depth migration: finite-difference, Fourier finite-difference, split-step and phase shift plus interpolation (the shots are grouped by source position, one per gather; the program's reading of the traces at the shot boundaries and its Hamming window are fixed) |
+| `seispy.migration.migtopo2d` | `sumigtopo2d` | Kirchhoff depth migration from a recording surface of variable topography (a spline), from traveltime tables as for `kdmig2d`; the surface and reference tables are those of the datuming programs (SU library function) |
+| `seispy.migration.invvxzco` | `suinvvxzco` | 2.5-D Born inversion (migration with true amplitudes) of a common-offset gather for a smooth v(x, z) and an optional slowness perturbation, by a finite-difference eikonal solver (SU library function; a raypath of too large a curvature is an error where the library stopped the process) |
+| `seispy.migration.miggbzo`, `miggbzoan` | `sumiggbzo`, `sumiggbzoan` | migration of zero-offset data by the accumulation of Gaussian beams, for v(x, z) and for an anisotropic (P-wave) medium of elastic coefficients or Thomsen's parameters (SU library functions) |
 | `seispy.migration.migfd`, `migffd`, `migpspi` | `sumigfd`, `sumigffd`, `sumigpspi` | finite-difference (45 to 90 degrees), Fourier finite-difference and phase-shift-plus-interpolation depth migration of zero-offset sections, with the velocity as an `(nz, nx)` array |
 | `seispy.migration.migps` | `sumigps` | phase-shift migration with turning rays for v(t) |
 | `seispy.migration.kdmig2d`, `ktmig2d` | `sukdmig2d`, `suktmig2d` | Kirchhoff depth migration from traveltime tables (arrays), prestack or poststack, and prestack time migration with the double square root operator |
@@ -434,7 +439,10 @@ from seispy import operations as op
 traces = synlv() | gain(tpow=2.0) | filter(f=[10, 20, 60, 80]) | gain(agc=True, wagc=0.2) | op.sgn()
 ```
 
-Programs that are not here yet: the programs of the csv Q-files and SPS header words of `su/main/statics` (`sushiftcsv`,
+Programs that are not here yet: `sukdmig3d` (3-D Kirchhoff depth migration, from the tables of `sutetraray`, which is not ported),
+`suinvzco3d` (3-D inversion for v(z), whose code mixes up its grids and its indices) and `sutifowler` (VTI velocity analysis by
+Fowler's method, which keeps its data on disk with the `VND` virtual array library), and the programs of the csv Q-files and SPS
+header words of `su/main/statics` (`sushiftcsv`,
 `surescsv`, `sunszonecsv`, `sufarldcsv`, `sugetqcsv`), which are driven by files and by header words that traces here do
 not have.
 

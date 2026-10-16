@@ -219,6 +219,8 @@ cdef class synvxz(spyc.BaseTraceIterator):
             raise ValueError("The shot or receiver lie outside of the specified (x,z) grid.")
         if status == -2:
             raise ValueError("The band nxb is too small for the offset.")
+        if status == -5:
+            raise ValueError("A raypath has too large a curvature: a smoother velocity is required.")
         if status != 0:
             raise ValueError("The parameters are not allowed.")
         return 0
@@ -362,6 +364,8 @@ cdef class synvxzcs(spyc.BaseTraceIterator):
             )
         if status == -1:
             raise ValueError("The shot or a receiver lie outside of the specified (x,z) grid.")
+        if status == -5:
+            raise ValueError("A raypath has too large a curvature: a smoother velocity is required.")
         if status != 0:
             raise ValueError("The parameters are not allowed.")
         return 0

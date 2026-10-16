@@ -213,3 +213,61 @@ def test_threads_can_each_run_the_noise_programs():
             expected = function(0)
             for got in pool.map(function, range(8)):
                 npt.assert_allclose(got, expected, rtol=1e-4, atol=1e-6 * max(1.0, float(np.abs(expected).max())))
+
+
+def test_threads_can_each_run_the_zero_offset_and_prestack_migrations():
+    import concurrent.futures
+
+    from seispy.migration import gazmig, migpresp, migpsti, migsplit, migtk
+
+    t = np.arange(120) * 0.004
+    section = [Trace(np.exp(-((t - 0.2 - 1e-4 * (i - 12) ** 2) * 40) ** 2).astype(np.float32), d_sample=0.004).replace(
+        tx_loc=[10.0 * i, 0.0, 0.0], rx_loc=[10.0 * i, 0.0, 0.0]) for i in range(24)]
+    vel = np.full((30, 24), 2000.0, np.float32)
+    shots = [t_.replace(tx_loc=[60.0, 0.0, 0.0], rx_loc=[10.0 * i, 0.0, 0.0]) for i, t_ in enumerate(section)]
+
+    def run(stage, traces):
+        return samples(from_iterable(traces) | stage)
+
+    jobs = [
+        lambda _: run(migsplit(vel=vel, nz=30, dz=10.0, dx=10.0), section),
+        lambda _: run(gazmig(vmig=2000.0, dx=10.0), section),
+        lambda _: run(migtk(dxcdp=10.0, vmig=2000.0), section),
+        lambda _: run(migpsti(vnmig=2100.0, vmig=2000.0, etamig=0.05, dx=10.0), section),
+        lambda _: run(migpresp(nxo=24, nz=30, dz=10.0, vel=vel, dx=10.0), shots),
+    ]
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        for job in jobs:
+            expected = job(0)
+            for got in pool.map(job, range(8)):
+                npt.assert_allclose(got, expected, rtol=1e-4, atol=1e-6 * max(1.0, float(np.abs(expected).max())))
+
+
+def test_threads_can_each_run_the_kirchhoff_inversion_and_beam_migrations():
+    import concurrent.futures
+
+    from seispy.migration import invvxzco, miggbzo, miggbzoan, migtopo2d
+
+    t = np.arange(240) * 0.004
+    section = [Trace(np.exp(-((t - 2.0 * np.hypot(25.0 * (i - 10), 200.0) / 2000.0) * 60.0) ** 2).astype(np.float32),
+                     d_sample=0.004).replace(tx_loc=[25.0 * i, 0.0, 0.0], rx_loc=[25.0 * i, 0.0, 0.0]) for i in range(21)]
+    vel = np.full((21, 21), 2000.0, np.float32)
+    xs = 25.0 * np.arange(21)
+    z = 25.0 * np.arange(13)
+    ttab = (np.sqrt((xs[None, None, :] - xs[:, None, None]) ** 2 + z[None, :, None] ** 2) / 2000.0).astype(np.float32)
+
+    def run(stage):
+        return samples(from_iterable(section) | stage)
+
+    jobs = [
+        lambda _: run(migtopo2d(ttab=ttab, fxt=0.0, dxt=25.0, fzt=0.0, dzt=25.0, fs=0.0, ds=25.0, fxi=0.0, dxi=25.0, nxi=21,
+                                dxm=25.0, nxo=21, dxo=25.0, nzo=25, dzo=12.5, aperx=250.0)),
+        lambda _: run(invvxzco(vel=vel, dx=25.0, dz=25.0, dxm=25.0, nxb=10, nxo=21, dxo=25.0, nzo=21, dzo=25.0)),
+        lambda _: run(miggbzo(vel=vel, dz=25.0, dx=25.0)),
+        lambda _: run(miggbzoan(a3333=vel * vel, dz=25.0, dx=25.0)),
+    ]
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        for job in jobs:
+            expected = job(0)
+            for got in pool.map(job, range(8)):
+                npt.assert_allclose(got, expected, rtol=1e-4, atol=1e-6 * max(1.0, float(np.abs(expected).max())))

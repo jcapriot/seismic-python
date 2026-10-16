@@ -850,6 +850,35 @@ cdef extern from "su.h" nogil:
         int lenx, int xopt, float dt, int iopt, int deriv, int linear, float *out)
     void su_ocext_offset(float offset, float offextr, float fmax, float sdmo, int nx, float dx, int nt, float dt,
         float ft, const float *vrms_in, float *ptx)
+    int su_migsplit(int nx, int nt, int nz, float dz, float dt, float dx, const float *pin, const float *vin,
+            float *cresult_out)
+    int su_gazmig(int nx, int nt, float dt, float ft, float dx, int ntau, float dtau, float ftau, const float *vt,
+            float qual, float gainceil, const float *pin, float *qout)
+    int su_migtk(int nx, int nt, float dt, float dx, float fmax, int nxpad, int ltaper, float speed, const float *vt,
+            const float *data, float *out)
+    int su_migpsti(int nx, int nt, float dt, float dx, const float *ffil_in, int nxpad, int ltaper, int np, int ntflag,
+            const float *vnt, const float *vt, const float *etat, const float *data, float *out)
+    int su_migprefd_shot(int nt, int nxo, int nz, float dt, float dx, float dz, int dip, float fmax, float f1, float f2, float f3,
+            float f4, int ix2, int ix3, int ixshot, const float *pin, const float *vpin, float *cresult_out)
+    int su_migpreffd_shot(int nt, int nxo, int nz, float dt, float dx, float dz, int dip, float fmax, float f1, float f2, float f3,
+            float f4, int ix2, int ix3, int ixshot, const float *pin, const float *vpin, float *cresult_out)
+    int su_migpresp_shot(int nt, int nxo, int nz, float dt, float dx, float dz, float fmax, float f1, float f2, float f3,
+            float f4, int ix2, int ix3, int ixshot, const float *pin, const float *vpin, float *cresult_out)
+    int su_migprepspi_shot(int nt, int nxo, int nz, float dt, float dx, float dz, int nflag, float fmax, float f1, float f2, float f3,
+            float f4, int ix2, int ix3, int ixshot, const float *pin, const float *vpin, float *cresult_out)
+    int su_migtopo2d_trace(const float *trace, int nt, float ft, float dt, float sx, float gx, float *mig, float aperx,
+            int nx, float fx, float dx, int nz, float fz, float dz, int ls, int mtmax, float dxm, float fmax, float angmax,
+            int ns, float fs, float ds, int nr, const float *tb, const float *pb, const float *angb, const float *sigb,
+            const float *ttab, int nzt, float fzt, float dzt, int nxt, float fxt, float dxt, int nxi, float fxi, float dxi,
+            const float *nangl)
+    int su_invvxzco(int nxm, int nt, float dt, float offs, float dxm, float fxm, int nx, int nz, float dx, float fx,
+            float dz, int nxd, int nxb, int nxc, int nzc, float fxo, float dxo, int nxo, float fzo, float dzo, int nzo,
+            float fmax, float ang, int ls, int pert, const float *vel, const float *vp_in, const float *data, float *out)
+    int su_miggbzo(int nt, float dt, int nx, float dx, int nz, float dz, float bwh, float fmin, float fmax, float amin,
+            float amax, const float *f_in, const float *vel_in, float *g_out)
+    int su_miggbzoan(int nt, float dt, int nx, float dx, int nz, float dz, float bwh, float fmin, float fmax, float amin,
+            float amax, const float *f_in, const float *a1111_in, const float *a3333_in, const float *a1133_in,
+            const float *a1313_in, const float *a1113_in, const float *a3313_in, float *g_out)
     void su_sem_scan(const float *data, const int *aloc, int numrolling, double scanloc, double locminscan,
         double locmaxscan, float smin, float sstep, int jsmax, float *adip, float *apow, float *asem, int lendip,
         int *numout)
